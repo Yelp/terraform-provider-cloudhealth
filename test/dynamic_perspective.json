@@ -1,0 +1,90 @@
+{
+  "schema": {
+    "name": "My Dynamic",
+    "include_in_reports": "false",
+    "rules": [
+      {
+        "type": "categorize",
+        "asset": "AwsAsset",
+        "ref_id": "1",
+        "tag_field": [
+          "my_tag"
+        ],
+        "condition": {
+          "clauses": [
+            {
+              "field": [
+                "Account Name"
+              ],
+              "op": "!=",
+              "val": "Excluded Account"
+            }
+          ]
+        }
+      },
+      {
+        "type": "categorize",
+        "asset": "AwsRedshiftCluster",
+        "ref_id": "2",
+        "field": [
+          "Cluster Identifier"
+        ]
+      }
+    ],
+    "constants": [
+      {
+        "type": "Static Group",
+        "list": [
+          {
+            "ref_id": "7",
+            "name": "Other",
+            "is_other": "true"
+          }
+        ]
+      },
+      {
+        "type": "Dynamic Group",
+        "list": [
+          {
+            "ref_id": "5",
+            "blk_id": "1",
+            "name": "ValC",
+            "val": "ValC"
+          },
+          {
+            "ref_id": "3",
+            "blk_id": "2",
+            "name": "ValA",
+            "val": "ValA"
+          },
+          {
+            "ref_id": "4",
+            "blk_id": "2",
+            "name": "ValB",
+            "val": "ValB"
+          },
+          {
+            "ref_id": "6",
+            "blk_id": "",
+            "name": "Remaining",
+            "val": "Remaining"
+          }
+        ]
+      },
+      {
+        "type": "Dynamic Group Block",
+        "list": [
+          {
+            "ref_id": "1",
+            "name": "Group One"
+          },
+          {
+            "ref_id": "2",
+            "name": "Group Two"
+          }
+        ]
+      }
+    ],
+    "merges": []
+  }
+}

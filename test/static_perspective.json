@@ -1,0 +1,61 @@
+{
+  "schema": {
+    "name": "My Name",
+    "include_in_reports": "true",
+    "rules": [
+      {
+        "type": "filter",
+        "asset": "AwsAccount",
+        "to": "1",
+        "condition": {
+          "clauses": [
+            {
+              "field": [
+                "Account Name"
+              ],
+              "op": "=",
+              "val": "My Account"
+            }
+          ]
+        }
+      },
+      {
+        "type": "filter",
+        "asset": "AwsAccount",
+        "to": "2",
+        "condition": {
+          "clauses": [
+            {
+              "field": [
+                "Account Name"
+              ],
+              "op": "Contains",
+              "val": "Another"
+            }
+          ]
+        }
+      }
+    ],
+    "constants": [
+      {
+        "type": "Static Group",
+        "list": [
+          {
+            "ref_id": "2",
+            "name": "Group Two"
+          },
+          {
+            "ref_id": "1",
+            "name": "Group One"
+          },
+          {
+            "ref_id": "3",
+            "name": "Other",
+            "is_other": "true"
+          }
+        ]
+      }
+    ],
+    "merges": []
+  }
+}
