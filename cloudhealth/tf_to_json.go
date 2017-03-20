@@ -44,95 +44,33 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 
 	for _, tfGroup := range tfGroups {
 		tfGroup := tfGroup.(map[string]interface{})
+		refId := tfGroup["ref_id"].(string)
 
-		for _, dg := range tfGroup["dynamic_group"].([]interface{}) {
-			dg := dg.(map[string]interface{})
-			blk_id := tfGroup["ref_id"].(string)
-			constantItem := ConstantItem{
-				Name:   dg["name"].(string),
-				Ref_id: dg["ref_id"].(string),
-				Blk_id: &blk_id,
-				Val:    dg["val"].(string),
-			}
-			constantsByType[DynamicGroupType].List = append(constantsByType[DynamicGroupType].List, constantItem)
+		// Convert any dynamic groups for this group (if it's a Dynamic Group Block)
+		dynamicGroupConstantItems := dynamicGroupConstantItemsToJson(refId, tfGroup["dynamic_group"].([]interface{}))
+		constantsByType[DynamicGroupType].List = append(constantsByType[DynamicGroupType].List, dynamicGroupConstantItems...)
+
+		// Convert any rules
+		rules, constantType, err := rulesToJson(refId, tfGroup["rule"].([]interface{}))
+		if err != nil {
+			return nil, err
 		}
+		pj.Schema.Rules = append(pj.Schema.Rules, rules...)
 
-		var constant *ConstantJSON
-
-		for _, r := range tfGroup["rule"].([]interface{}) {
-			r := r.(map[string]interface{})
-
-			var rj RuleJSON
-
-			rj.Type = r["type"].(string)
-			if rj.Type == "categorize" {
-				if constant != nil && constant != constantsByType[DynamicGroupBlockType] {
-					return nil, fmt.Errorf("Cannot support mixed categorize and filter rules in one group: %s", tfGroup["name"])
-				}
-				constant = constantsByType[DynamicGroupBlockType]
-				rj.Ref_id = tfGroup["ref_id"].(string)
-			} else if rj.Type == "filter" {
-				if constant != nil && constant != constantsByType[StaticGroupType] {
-					return nil, fmt.Errorf("Cannot support mixed categorize and filter rules in one group: %s", tfGroup["name"])
-				}
-				constant = constantsByType[StaticGroupType]
-				rj.To = tfGroup["ref_id"].(string)
-			} else if rj.Type == "" {
-				return nil, fmt.Errorf("rule type not set!")
-			} else {
-				return nil, fmt.Errorf("Unrecognized rule type %s", rj.Type)
-			}
-
-			rj.Asset = stringOrNil(r["asset"])
-			rj.Field = convertStringArray(r["field"])
-			rj.Tag_field = convertStringArray(r["tag_field"])
-
-			if r["condition"] != nil && len(r["condition"].([]interface{})) > 0 {
-				conditions := r["condition"].([]interface{})
-				rj.Condition = new(ConditionJSON)
-				rj.Condition.Clauses = make([]ClauseJSON, len(conditions))
-				for idx, condition := range conditions {
-					condition := condition.(map[string]interface{})
-					rj.Condition.Clauses[idx] = ClauseJSON{
-						Field:     convertStringArray(condition["field"]),
-						Tag_field: convertStringArray(condition["tag_field"]),
-						Op:        stringOrNil(condition["op"]),
-						Val:       stringOrNil(condition["val"]),
-					}
-				}
-			} else {
-				rj.Condition = nil
-			}
-
-			pj.Schema.Rules = append(pj.Schema.Rules, rj)
-		}
-
+		// Add a constant for this group
 		constantItem := ConstantItem{
 			Name:   tfGroup["name"].(string),
 			Ref_id: tfGroup["ref_id"].(string),
 		}
-		if constant == nil {
-			return nil, fmt.Errorf("Unknown group type %s", tfGroup["name"])
-		}
+		constant := constantsByType[constantType]
 		constant.List = append(constant.List, constantItem)
 	}
 
+	// Add constants for all other_group entries
 	for _, otherGroup := range otherGroups {
 		otherGroup := otherGroup.(map[string]interface{})
-		constantType := otherGroup["constant_type"].(string)
+		constantType, constantItem := otherGroupToJson(otherGroup)
 
-		constantItem := ConstantItem{
-			Ref_id: stringOrNil(otherGroup["ref_id"]),
-			Name:   stringOrNil(otherGroup["name"]),
-			Val:    stringOrNil(otherGroup["val"]),
-		}
-		if constantType == DynamicGroupType {
-			blk_id := stringOrNil(otherGroup["blk_id"])
-			constantItem.Blk_id = &blk_id
-		}
-		if stringOrNil(otherGroup["is_other"]) == "true" {
-			constantItem.Is_other = "true"
-		}
 		constant := constantsByType[constantType]
 		if constant == nil {
 			return nil, fmt.Errorf("Unknown constant type %s", constantType)
@@ -140,7 +78,8 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 		constant.List = append(constant.List, constantItem)
 	}
 
-	for _, constantGroup := range constantsByType {
+	// Only add constants that have something in them
+	for _, constantGroup := range constants {
 		if len(constantGroup.List) > 0 {
 			pj.Schema.Constants = append(pj.Schema.Constants, *constantGroup)
 		}
@@ -157,6 +96,98 @@ func fillInMissingRefIDs(groups []interface{}, otherGroups []interface{}) {
 			g["ref_id"], _ = uuid.GenerateUUID()
 		}
 	}
+}
+
+func dynamicGroupConstantItemsToJson(groupRefId string, dynamicGroups []interface{}) []ConstantItem {
+	result := make([]ConstantItem, len(dynamicGroups))
+
+	for idx, dg := range dynamicGroups {
+		dg := dg.(map[string]interface{})
+		blk_id := groupRefId
+		result[idx] = ConstantItem{
+			Name:   dg["name"].(string),
+			Ref_id: dg["ref_id"].(string),
+			Blk_id: &blk_id,
+			Val:    dg["val"].(string),
+		}
+	}
+	return result
+}
+
+// TODO: push constantType up into group-level
+func rulesToJson(groupRefId string, rules []interface{}) (result []RuleJSON, constantType string, err error) {
+	result = make([]RuleJSON, len(rules))
+
+	for ruleIdx, r := range rules {
+		r := r.(map[string]interface{})
+
+		rj := &result[ruleIdx]
+
+		rj.Type = r["type"].(string)
+		if rj.Type == "categorize" {
+			if constantType != "" && constantType != DynamicGroupBlockType {
+				return nil, "", fmt.Errorf("Cannot support mixed categorize and filter rules")
+			}
+			constantType = DynamicGroupBlockType
+			rj.Ref_id = groupRefId
+		} else if rj.Type == "filter" {
+			if constantType != "" && constantType != StaticGroupType {
+				return nil, "", fmt.Errorf("Cannot support mixed categorize and filter rules")
+			}
+			constantType = StaticGroupType
+			rj.To = groupRefId
+		} else if rj.Type == "" {
+			return nil, "", fmt.Errorf("rule type not set!")
+		} else {
+			return nil, "", fmt.Errorf("Unrecognized rule type %s", rj.Type)
+		}
+
+		rj.Asset = stringOrNil(r["asset"])
+		rj.Field = convertStringArray(r["field"])
+		rj.Tag_field = convertStringArray(r["tag_field"])
+
+		if r["condition"] != nil {
+			rj.Condition = conditionsToJson(r["condition"].([]interface{}))
+		} else {
+			rj.Condition = nil
+		}
+	}
+	return result, constantType, nil
+}
+
+func conditionsToJson(conditions []interface{}) (result *ConditionJSON) {
+	if len(conditions) == 0 {
+		return nil
+	}
+	result = new(ConditionJSON)
+	result.Clauses = make([]ClauseJSON, len(conditions))
+	for idx, condition := range conditions {
+		condition := condition.(map[string]interface{})
+		result.Clauses[idx] = ClauseJSON{
+			Field:     convertStringArray(condition["field"]),
+			Tag_field: convertStringArray(condition["tag_field"]),
+			Op:        stringOrNil(condition["op"]),
+			Val:       stringOrNil(condition["val"]),
+		}
+	}
+	return result
+}
+
+func otherGroupToJson(otherGroup map[string]interface{}) (constantType string, constantItem ConstantItem) {
+	constantType = otherGroup["constant_type"].(string)
+	constantItem = ConstantItem{
+		Ref_id: stringOrNil(otherGroup["ref_id"]),
+		Name:   stringOrNil(otherGroup["name"]),
+		Val:    stringOrNil(otherGroup["val"]),
+	}
+	if constantType == DynamicGroupType {
+		blk_id := stringOrNil(otherGroup["blk_id"])
+		constantItem.Blk_id = &blk_id
+	}
+	if stringOrNil(otherGroup["is_other"]) == "true" {
+		constantItem.Is_other = "true"
+	}
+	return constantType, constantItem
 }
 
 func convertStringArray(maybeStringArray interface{}) []string {
