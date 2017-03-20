@@ -38,39 +38,39 @@ The below example defines two groups. The first is called "My Team" who matches 
 
 ```
 resource "cloudhealth_perspective" "my_perspective" {
-	name = "My Perspective"
-	include_in_reports = false
+    name = "My Perspective"
+    include_in_reports = false
 
-	group {
-		name = "My Team"
+    group {
+        name = "My Team"
         type = "filter"
 
-		rule {
-			asset = "AwsAsset"
-			condition {
-				tag_field = ["team"]
-				val = "my_team"
-			}
-		}
+        rule {
+            asset = "AwsAsset"
+            condition {
+                tag_field = ["team"]
+                val = "my_team"
+            }
+        }
 
-		rule {
-			asset = "AwsAsset"
-			condition {
-				tag_field = ["team"]
-				val = "my_team@mycorp.com"
-			}
-		}
-	}
+        rule {
+            asset = "AwsAsset"
+            condition {
+                tag_field = ["team"]
+                val = "my_team@corp.com"
+            }
+        }
+    }
 
-	group {
-		name = "redshift"
+    group {
+        name = "redshift"
         type = "categorize"
 
-		rule {
-			asset = "AwsRedshiftCluster"
-			field = ["Cluster Identifier"]
-		}
-	}
+        rule {
+            asset = "AwsRedshiftCluster"
+            field = ["Cluster Identifier"]
+        }
+    }
 
 ```
 
@@ -79,17 +79,17 @@ Rules have the following structure.
 
 ```
 rule {
-	asset = <asset>
-	[field = ["field1", "field2" ...]]
-	[tag_field = ["tagfield1", "tagfield2" ...]
+    asset = <asset>
+    [field = ["field1", "field2" ...]]
+    [tag_field = ["tagfield1", "tagfield2" ...]
 
-	combine_with = <[OR]|AND>
-	condition {
-		[field = ["field1", "field2" ...]]
-		[tag_field = ["tagfield1", "tagfield2" ...]
-		op = <[=]|!=|Contains|Does Not Contain,...]
-		val = <val>
-	}
+    combine_with = <[OR]|AND>
+    condition {
+        [field = ["field1", "field2" ...]]
+        [tag_field = ["tagfield1", "tagfield2" ...]
+        op = <[=]|!=|Contains|Does Not Contain,...]
+        val = <val>
+    }
 }
 ```
 There are only two permissible values for group type.
