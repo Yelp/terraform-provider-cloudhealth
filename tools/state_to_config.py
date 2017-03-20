@@ -18,6 +18,7 @@ def main():
         # persp_id = state_resource['primary']['id']
         state_attr = state_resource['primary']['attributes']
         print('    name = "%s"' % state_attr['name'])
+        print('    include_in_reports = %s' % state_attr['include_in_reports'])
 
         for group_idx in range(int(state_attr['group.#'])):
             prefix = 'group.%d.' % group_idx
@@ -30,7 +31,6 @@ def print_group(state_attr, prefix):
     print()
     print('    group {')
     print('        name = "%s"' % state_attr[prefix + 'name'])
-    print('        include_in_reports = %s' % state_attr[prefix + 'include_in_reports'])
     print('        type = "%s"' % state_attr[prefix + 'type'])
 
     for rule_idx in range(int(state_attr[prefix + 'rule.#'])):
