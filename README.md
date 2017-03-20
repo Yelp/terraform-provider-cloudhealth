@@ -43,6 +43,7 @@ resource "cloudhealth_perspective" "my_perspective" {
 
 	group {
 		name = "My Team"
+        type = "filter"
 
 		rule {
 			asset = "AwsAsset"
@@ -63,9 +64,9 @@ resource "cloudhealth_perspective" "my_perspective" {
 
 	group {
 		name = "redshift"
+        type = "categorize"
 
 		rule {
-			type = "categorize"
 			asset = "AwsRedshiftCluster"
 			field = ["Cluster Identifier"]
 		}
@@ -78,7 +79,6 @@ Rules have the following structure.
 
 ```
 rule {
-	type = <[filter]|categorize>
 	asset = <asset>
 	[field = ["field1", "field2" ...]]
 	[tag_field = ["tagfield1", "tagfield2" ...]
@@ -92,8 +92,9 @@ rule {
 	}
 }
 ```
-Static groups have rules with `type=filter`. This is the default.
-Dynamic groups have rules with `type=categorize`. In this case you must also define `field` or `tag_field` on the rule. You may not combine `filter` and `categorize` rules on the same group.
+There are only two permissible values for group type.
+Static groups have `type=filter`. This is the default.
+Dynamic groups have `type=categorize`. In this case you must also define `field` or `tag_field` on the rule.
 
 ### Important note about rule ordering
 There is one main difference between the schema used in Terraform and the actual Cloudhealth Perspective API.

@@ -51,18 +51,18 @@ func resourceCHTPerspective() *schema.Resource {
 							Computed: true,
 							Optional: true,
 						},
+						"type": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: false,
+							Default:  "filter",
+						},
 						"rule": &schema.Schema{
 							Type:     schema.TypeList,
 							Optional: true,
 							ForceNew: false,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
-									"type": &schema.Schema{
-										Type:     schema.TypeString,
-										Optional: true,
-										ForceNew: false,
-										Default:  "filter",
-									},
 									"asset": &schema.Schema{
 										Type:     schema.TypeString,
 										Required: true,

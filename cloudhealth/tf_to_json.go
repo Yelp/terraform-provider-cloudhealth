@@ -46,12 +46,20 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 		tfGroup := tfGroup.(map[string]interface{})
 		refId := tfGroup["ref_id"].(string)
 
-		// Convert any dynamic groups for this group (if it's a Dynamic Group Block)
-		dynamicGroupConstantItems := dynamicGroupConstantItemsToJson(refId, tfGroup["dynamic_group"].([]interface{}))
-		constantsByType[DynamicGroupType].List = append(constantsByType[DynamicGroupType].List, dynamicGroupConstantItems...)
+		var constantType string
+		if tfGroup["type"].(string) == "categorize" {
+			// Convert any dynamic groups for this group (if it's a Dynamic Group Block)
+			dynamicGroupConstantItems := dynamicGroupConstantItemsToJson(refId, tfGroup["dynamic_group"].([]interface{}))
+			constantsByType[DynamicGroupType].List = append(constantsByType[DynamicGroupType].List, dynamicGroupConstantItems...)
+			constantType = DynamicGroupBlockType
+		} else if tfGroup["type"].(string) == "filter" {
+			constantType = StaticGroupType
+		} else {
+			return nil, fmt.Errorf("Unknown group type: %s. Expected filter or categorize", tfGroup["type"])
+		}
 
 		// Convert any rules
-		rules, constantType, err := rulesToJson(refId, tfGroup["rule"].([]interface{}))
+		rules, err := rulesToJson(refId, constantType, tfGroup["rule"].([]interface{}))
 		if err != nil {
 			return nil, err
 		}
@@ -114,8 +122,7 @@ func dynamicGroupConstantItemsToJson(groupRefId string, dynamicGroups []interfac
 	return result
 }
 
-// TODO: push constantType up into group-level
-func rulesToJson(groupRefId string, rules []interface{}) (result []RuleJSON, constantType string, err error) {
+func rulesToJson(groupRefId string, constantType string, rules []interface{}) (result []RuleJSON, err error) {
 	result = make([]RuleJSON, len(rules))
 
 	for ruleIdx, r := range rules {
@@ -123,23 +130,14 @@ func rulesToJson(groupRefId string, rules []interface{}) (result []RuleJSON, con
 
 		rj := &result[ruleIdx]
 
-		rj.Type = r["type"].(string)
-		if rj.Type == "categorize" {
-			if constantType != "" && constantType != DynamicGroupBlockType {
-				return nil, "", fmt.Errorf("Cannot support mixed categorize and filter rules")
-			}
-			constantType = DynamicGroupBlockType
+		if constantType == DynamicGroupBlockType {
 			rj.Ref_id = groupRefId
-		} else if rj.Type == "filter" {
-			if constantType != "" && constantType != StaticGroupType {
-				return nil, "", fmt.Errorf("Cannot support mixed categorize and filter rules")
-			}
-			constantType = StaticGroupType
+			rj.Type = "categorize"
+		} else if constantType == StaticGroupType {
 			rj.To = groupRefId
-		} else if rj.Type == "" {
-			return nil, "", fmt.Errorf("rule type not set!")
+			rj.Type = "filter"
 		} else {
-			return nil, "", fmt.Errorf("Unrecognized rule type %s", rj.Type)
+			return nil, fmt.Errorf("Unrecognized group type %s", constantType)
 		}
 
 		rj.Asset = stringOrNil(r["asset"])
@@ -152,7 +150,7 @@ func rulesToJson(groupRefId string, rules []interface{}) (result []RuleJSON, con
 			rj.Condition = nil
 		}
 	}
-	return result, constantType, nil
+	return result, nil
 }
 
 func conditionsToJson(conditions []interface{}) (result *ConditionJSON) {

@@ -70,6 +70,9 @@ func jsonToGroups(pj PerspectiveJSON) (groupByRef map[string]Group) {
 			group["rule"] = make([]map[string]interface{}, 0)
 			if constant.Type == DynamicGroupBlockType {
 				group["dynamic_group"] = make([]map[string]interface{}, 0)
+				group["type"] = "categorize"
+			} else {
+				group["type"] = "filter"
 			}
 			groupByRef[constantGroup.Ref_id] = group
 		}
@@ -129,7 +132,9 @@ func populateRules(pj PerspectiveJSON, groupByRef map[string]Group) (groups []Gr
 
 		group["rule"] = append(group["rule"].([]map[string]interface{}), rule)
 
-		rule["type"] = jsonRule.Type
+		if jsonRule.Type != group["type"] {
+			return nil, fmt.Errorf("Unknown rule type %s; expected %s", jsonRule.Type, group["type"])
+		}
 		rule["asset"] = jsonRule.Asset
 		if jsonRule.Tag_field != nil {
 			rule["tag_field"] = jsonRule.Tag_field
