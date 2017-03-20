@@ -6,6 +6,7 @@
       {
         "type": "categorize",
         "asset": "AwsAsset",
+        "name": "Group One",
         "ref_id": "1",
         "tag_field": [
           "my_tag"
@@ -25,6 +26,7 @@
       {
         "type": "categorize",
         "asset": "AwsRedshiftCluster",
+        "name": "Group Two",
         "ref_id": "2",
         "field": [
           "Cluster Identifier"

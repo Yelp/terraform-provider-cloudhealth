@@ -17,6 +17,7 @@ type RuleJSON struct {
 	Asset     string         `json:"asset,omitempty"`
 	To        string         `json:"to,omitempty"`
 	Ref_id    string         `json:"ref_id,omitempty"`    // for type='categorize'
+	Name      string         `json:"name,omitempty"`      // for type='categorize'
 	Field     []string       `json:"field,omitempty"`     // for type='categorize'
 	Tag_field []string       `json:"tag_field,omitempty"` // for type='categorize'
 	Condition *ConditionJSON `json:"condition,omitempty"`

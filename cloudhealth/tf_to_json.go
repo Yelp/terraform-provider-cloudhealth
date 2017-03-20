@@ -45,6 +45,7 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 	for _, tfGroup := range tfGroups {
 		tfGroup := tfGroup.(map[string]interface{})
 		refId := tfGroup["ref_id"].(string)
+		name := tfGroup["name"].(string)
 
 		var constantType string
 		if tfGroup["type"].(string) == "categorize" {
@@ -59,7 +60,7 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 		}
 
 		// Convert any rules
-		rules, err := rulesToJson(refId, constantType, tfGroup["rule"].([]interface{}))
+		rules, err := rulesToJson(refId, name, constantType, tfGroup["rule"].([]interface{}))
 		if err != nil {
 			return nil, err
 		}
@@ -67,8 +68,8 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 
 		// Add a constant for this group
 		constantItem := ConstantItem{
-			Name:   tfGroup["name"].(string),
-			Ref_id: tfGroup["ref_id"].(string),
+			Name:   name,
+			Ref_id: refId,
 		}
 		constant := constantsByType[constantType]
 		constant.List = append(constant.List, constantItem)
@@ -122,7 +123,7 @@ func dynamicGroupConstantItemsToJson(groupRefId string, dynamicGroups []interfac
 	return result
 }
 
-func rulesToJson(groupRefId string, constantType string, rules []interface{}) (result []RuleJSON, err error) {
+func rulesToJson(groupRefId string, groupName string, constantType string, rules []interface{}) (result []RuleJSON, err error) {
 	result = make([]RuleJSON, len(rules))
 
 	for ruleIdx, r := range rules {
@@ -133,6 +134,7 @@ func rulesToJson(groupRefId string, constantType string, rules []interface{}) (r
 		if constantType == DynamicGroupBlockType {
 			rj.Ref_id = groupRefId
 			rj.Type = "categorize"
+			rj.Name = groupName
 		} else if constantType == StaticGroupType {
 			rj.To = groupRefId
 			rj.Type = "filter"
