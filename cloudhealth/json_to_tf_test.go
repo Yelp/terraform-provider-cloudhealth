@@ -46,11 +46,16 @@ func TestJsonToTFStatic(t *testing.T) {
 	assertEqual(t, rd, "group.1.ref_id", "2")
 	assertEqual(t, rd, "group.1.rule.#", 1)
 	assertEqual(t, rd, "group.1.rule.0.asset", "AwsAccount")
-	assertEqual(t, rd, "group.1.rule.0.condition.#", 1)
+	assertEqual(t, rd, "group.1.rule.0.combine_with", "OR")
+	assertEqual(t, rd, "group.1.rule.0.condition.#", 2)
 	assertEqual(t, rd, "group.1.rule.0.condition.0.field.#", 1)
 	assertEqual(t, rd, "group.1.rule.0.condition.0.field.0", "Account Name")
 	assertEqual(t, rd, "group.1.rule.0.condition.0.op", "Contains")
-	assertEqual(t, rd, "group.1.rule.0.condition.0.val", "Another")
+	assertEqual(t, rd, "group.1.rule.0.condition.0.val", "Some Account")
+	assertEqual(t, rd, "group.1.rule.0.condition.1.field.#", 1)
+	assertEqual(t, rd, "group.1.rule.0.condition.1.field.0", "Account Name")
+	assertEqual(t, rd, "group.1.rule.0.condition.1.op", "Contains")
+	assertEqual(t, rd, "group.1.rule.0.condition.1.val", "Another Account")
 	assertEqual(t, rd, "other_group.#", 1)
 	assertEqual(t, rd, "other_group.0.name", "Other")
 	assertEqual(t, rd, "other_group.0.constant_type", "Static Group")
@@ -58,7 +63,7 @@ func TestJsonToTFStatic(t *testing.T) {
 	assertEqual(t, rd, "other_group.0.is_other", "true")
 }
 
-func TestJsonToTFToJson(t *testing.T) {
+func TestJsonToTFToJsonDynamic(t *testing.T) {
 	resource := resourceCHTPerspective()
 	rd := resource.TestResourceData()
 
@@ -66,6 +71,20 @@ func TestJsonToTFToJson(t *testing.T) {
 	err = jsonToTF(originalBytes, rd)
 	assert.Nil(t, err)
 	assertEqual(t, rd, "include_in_reports", false)
+
+	resultBytes, err := tfToJson(rd)
+	assert.Nil(t, err)
+	assertJsonEqual(t, originalBytes, resultBytes)
+}
+
+func TestJsonToTFToJsonStatic(t *testing.T) {
+	resource := resourceCHTPerspective()
+	rd := resource.TestResourceData()
+
+	originalBytes, err := ioutil.ReadFile("../test/static_perspective.json")
+	err = jsonToTF(originalBytes, rd)
+	assert.Nil(t, err)
+	assertEqual(t, rd, "include_in_reports", true)
 
 	resultBytes, err := tfToJson(rd)
 	assert.Nil(t, err)

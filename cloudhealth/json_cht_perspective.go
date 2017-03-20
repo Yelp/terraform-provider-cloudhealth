@@ -8,7 +8,8 @@ type ClauseJSON struct {
 }
 
 type ConditionJSON struct {
-	Clauses []ClauseJSON `json:"clauses,omitempty"`
+	Combine_with string       `json:"combine_with,omitempty"`
+	Clauses      []ClauseJSON `json:"clauses,omitempty"`
 }
 
 type RuleJSON struct {

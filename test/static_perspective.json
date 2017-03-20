@@ -24,13 +24,21 @@
         "asset": "AwsAccount",
         "to": "2",
         "condition": {
+          "combine_with": "OR",
           "clauses": [
             {
               "field": [
                 "Account Name"
               ],
               "op": "Contains",
-              "val": "Another"
+              "val": "Some Account"
+            },
+            {
+              "field": [
+                "Account Name"
+              ],
+              "op": "Contains",
+              "val": "Another Account"
             }
           ]
         }
@@ -41,12 +49,12 @@
         "type": "Static Group",
         "list": [
           {
-            "ref_id": "2",
-            "name": "Group Two"
-          },
-          {
             "ref_id": "1",
             "name": "Group One"
+          },
+          {
+            "ref_id": "2",
+            "name": "Group Two"
           },
           {
             "ref_id": "3",

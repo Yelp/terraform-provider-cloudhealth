@@ -145,7 +145,7 @@ func rulesToJson(groupRefId string, constantType string, rules []interface{}) (r
 		rj.Tag_field = convertStringArray(r["tag_field"])
 
 		if r["condition"] != nil {
-			rj.Condition = conditionsToJson(r["condition"].([]interface{}))
+			rj.Condition = conditionsToJson(r["condition"].([]interface{}), stringOrNil(r["combine_with"]))
 		} else {
 			rj.Condition = nil
 		}
@@ -153,12 +153,13 @@ func rulesToJson(groupRefId string, constantType string, rules []interface{}) (r
 	return result, nil
 }
 
-func conditionsToJson(conditions []interface{}) (result *ConditionJSON) {
+func conditionsToJson(conditions []interface{}, combineWith string) (result *ConditionJSON) {
 	if len(conditions) == 0 {
 		return nil
 	}
 	result = new(ConditionJSON)
 	result.Clauses = make([]ClauseJSON, len(conditions))
+	result.Combine_with = combineWith
 	for idx, condition := range conditions {
 		condition := condition.(map[string]interface{})
 		result.Clauses[idx] = ClauseJSON{

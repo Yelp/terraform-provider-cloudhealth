@@ -144,6 +144,7 @@ func populateRules(pj PerspectiveJSON, groupByRef map[string]Group) (groups []Gr
 		}
 
 		if jsonRule.Condition != nil {
+			rule["combine_with"] = jsonRule.Condition.Combine_with
 			jsonClauses := jsonRule.Condition.Clauses
 			if jsonClauses != nil {
 				rule["condition"] = buildCondition(jsonClauses)
