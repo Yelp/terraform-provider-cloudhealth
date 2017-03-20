@@ -31,6 +31,7 @@ def print_group(state_attr, prefix):
     print('    group {')
     print('        name = "%s"' % state_attr[prefix + 'name'])
     print('        include_in_reports = %s' % state_attr[prefix + 'include_in_reports'])
+    print('        type = "%s"' % state_attr[prefix + 'type'])
 
     for rule_idx in range(int(state_attr[prefix + 'rule.#'])):
         print_rule(state_attr, prefix + 'rule.%d.' % rule_idx)
@@ -41,10 +42,6 @@ def print_group(state_attr, prefix):
 def print_rule(state_attr, prefix):
     print()
     print('        rule {')
-
-    if state_attr[prefix + "type"] != 'filter': # is default
-        print('            type = "%s"' % state_attr[prefix + 'type'])
-
     print('            asset = "%s"' % state_attr[prefix + 'asset'])
 
     if state_attr[prefix + "combine_with"]:
