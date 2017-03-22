@@ -97,7 +97,7 @@ func populateDynamicGroups(pj PerspectiveJSON, groupByRef map[string]Group) erro
 			group["ref_id"] = constantGroup.Ref_id
 			owningGroup := groupByRef[*constantGroup.Blk_id]
 			if owningGroup == nil {
-				return fmt.Errorf("Reference in %s to blk_id %s not found", constantGroup.Name, constantGroup.Blk_id)
+				return fmt.Errorf("Reference in %s to blk_id %s not found", constantGroup.Name, *constantGroup.Blk_id)
 			}
 			dynamicGroups := owningGroup["dynamic_group"].([]map[string]interface{})
 			owningGroup["dynamic_group"] = append(dynamicGroups, group)
@@ -121,6 +121,9 @@ func populateRules(pj PerspectiveJSON, groupByRef map[string]Group) (groups []Gr
 
 		rule := make(map[string]interface{})
 		group := groupByRef[groupRef]
+		if group == nil {
+			return nil, fmt.Errorf("Group reference %s not found", groupRef)
+		}
 
 		// Order the groups by order that the rules are seen.  CHT technically
 		// allows the groups for rules to be interleaved, but this is horribly
