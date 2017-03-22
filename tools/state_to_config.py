@@ -24,7 +24,7 @@ def main():
             prefix = 'group.%d.' % group_idx
             print_group(state_attr, prefix)
 
-    print('}')
+        print('}')
 
 
 def print_group(state_attr, prefix):
