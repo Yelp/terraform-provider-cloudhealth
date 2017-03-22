@@ -87,7 +87,7 @@ func populateDynamicGroups(pj PerspectiveJSON, groupByRef map[string]Group) erro
 			continue
 		}
 		for _, constantGroup := range constant.List {
-			if *constantGroup.Blk_id == "" && constantGroup.Name == "Remaining" {
+			if *constantGroup.Blk_id == "" {
 				// Handled via findOtherGroups
 				continue
 			}
@@ -182,7 +182,7 @@ func findOtherGroups(pj PerspectiveJSON) []Group {
 	for _, constant := range pj.Schema.Constants {
 		for _, constantGroup := range constant.List {
 			if constantGroup.Is_other == "true" ||
-				(constant.Type == DynamicGroupType && *constantGroup.Blk_id == "" && constantGroup.Name == "Remaining") {
+				(constant.Type == DynamicGroupType && *constantGroup.Blk_id == "") {
 				otherGroup := Group{
 					"constant_type": constant.Type,
 					"ref_id":        constantGroup.Ref_id,
