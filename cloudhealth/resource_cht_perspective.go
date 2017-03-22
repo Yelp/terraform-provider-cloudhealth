@@ -216,6 +216,10 @@ func resourceCHTPerspectiveCreate(d *schema.ResourceData, meta interface{}) erro
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Failed to create perspective %s because got status code %d", d.Id(), resp.StatusCode)
+	}
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("Failed to create perspective because %s", err)
@@ -244,6 +248,9 @@ func resourceCHTPerspectiveRead(d *schema.ResourceData, meta interface{}) error 
 		return fmt.Errorf("Failed to load perspective %s because %s", d.Id(), err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Failed to load perspective %s because got status code %d", d.Id(), resp.StatusCode)
+	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -280,6 +287,10 @@ func resourceCHTPerspectiveUpdate(d *schema.ResourceData, meta interface{}) erro
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Failed to update perspective %s because got status code %d", d.Id(), resp.StatusCode)
+	}
+
 	body, err := ioutil.ReadAll(resp.Body)
 	bodyStr := string(body)
 	log.Println("Response to Cloudhealth PUT is:", bodyStr)
@@ -311,6 +322,10 @@ func resourceCHTPerspectiveDelete(d *schema.ResourceData, meta interface{}) erro
 		return fmt.Errorf("Failed to delete perspective %s because %s", d.Id(), err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Failed to delete perspective %s because got status code %d", d.Id(), resp.StatusCode)
+	}
 
 	return nil
 }
