@@ -7,11 +7,14 @@ import sys
 
 def main():
     f = open(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] != '-' else sys.stdin
+    group_name = sys.argv[2] if len(sys.argv) > 2 else None
 
     state = json.load(f)
     for tf_name, state_resource in state['modules'][0]['resources'].items():
         type, tf_name = tf_name.split('.')
         if type != 'cloudhealth_perspective':
+            continue
+        if group_name and tf_name != group_name:
             continue
         print('resource "cloudhealth_perspective" "%s" {' % tf_name)
 
