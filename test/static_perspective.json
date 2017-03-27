@@ -42,6 +42,22 @@
             }
           ]
         }
+      },
+      {
+        "type": "filter",
+        "asset": "AwsAsset",
+        "to": "3",
+        "condition": {
+          "clauses": [
+            {
+              "tag_field": [
+                "team"
+              ],
+              "op": "=",
+              "val": "My Team"
+            }
+          ]
+        }
       }
     ],
     "constants": [
@@ -58,6 +74,10 @@
           },
           {
             "ref_id": "3",
+            "name": "Group Three"
+          },
+          {
+            "ref_id": "4",
             "name": "Other",
             "is_other": "true"
           }

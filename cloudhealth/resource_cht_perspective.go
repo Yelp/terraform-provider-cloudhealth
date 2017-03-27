@@ -122,38 +122,10 @@ func resourceCHTPerspective() *schema.Resource {
 								},
 							},
 						},
-						"dynamic_group": &schema.Schema{
-							Type:     schema.TypeList,
-							Optional: true,
-							ForceNew: false,
-							Computed: true,
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"ref_id": &schema.Schema{
-										Type:     schema.TypeString,
-										ForceNew: false,
-										Computed: true,
-										Optional: true,
-									},
-									"name": &schema.Schema{
-										Type:     schema.TypeString,
-										ForceNew: false,
-										Computed: true,
-										Optional: true,
-									},
-									"val": &schema.Schema{
-										Type:     schema.TypeString,
-										ForceNew: false,
-										Computed: true,
-										Optional: true,
-									},
-								},
-							},
-						},
 					},
 				},
 			},
-			"other_group": &schema.Schema{
+			"constant": &schema.Schema{
 				Type:     schema.TypeList,
 				Optional: true,
 				ForceNew: false,
@@ -266,6 +238,8 @@ func resourceCHTPerspectiveUpdate(d *schema.ResourceData, meta interface{}) erro
 	if err != nil {
 		return err
 	}
+
+	ioutil.WriteFile("cht_update.json", pj, 0644)
 
 	id, err := strconv.Atoi(d.Id())
 	if err != nil {

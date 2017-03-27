@@ -53,18 +53,25 @@ func TestDynamicGroupsPreserved(t *testing.T) {
 	rd := resource.Data(&terraform.InstanceState{
 		ID: "1234",
 		Attributes: map[string]string{
-			"name":                           "My Name",
-			"include_in_reports":             "true",
-			"group.#":                        "1",
-			"group.0.name":                   "New Group",
-			"group.0.ref_id":                 "1",
-			"group.0.type":                   "categorize",
-			"group.0.rule.#":                 "1",
-			"group.0.rule.0.asset":           "AwsAccount",
-			"group.0.dynamic_group.#":        "1",
-			"group.0.dynamic_group.0.ref_id": "2",
-			"group.0.dynamic_group.0.name":   "My Account",
-			"group.0.dynamic_group.0.val":    "My Account",
+			"name":                 "My Name",
+			"include_in_reports":   "true",
+			"group.#":              "1",
+			"group.0.name":         "New Group",
+			"group.0.ref_id":       "1",
+			"group.0.type":         "categorize",
+			"group.0.rule.#":       "1",
+			"group.0.rule.0.asset": "AwsAccount",
+			"constant.#":           "2",
+
+			"constant.0.constant_type": "Dynamic Group",
+			"constant.0.ref_id":        "2",
+			"constant.0.name":          "My Account",
+			"constant.0.val":           "My Account",
+			"constant.0.blk_id":        "1",
+
+			"constant.1.constant_type": "Dynamic Group Block",
+			"constant.1.ref_id":        "1",
+			"constant.1.name":          "New Group",
 		},
 	})
 	b, err := tfToJson(rd)
@@ -72,8 +79,15 @@ func TestDynamicGroupsPreserved(t *testing.T) {
 
 	newRD := resource.TestResourceData()
 	jsonToTF(b, newRD)
-	assertEqual(t, newRD, "group.0.dynamic_group.#", 1)
-	assertEqual(t, newRD, "group.0.dynamic_group.0.ref_id", "2")
-	assertEqual(t, newRD, "group.0.dynamic_group.0.name", "My Account")
-	assertEqual(t, newRD, "group.0.dynamic_group.0.val", "My Account")
+
+	assertEqual(t, newRD, "constant.#", 2)
+	assertEqual(t, newRD, "constant.0.constant_type", "Dynamic Group")
+	assertEqual(t, newRD, "constant.0.ref_id", "2")
+	assertEqual(t, newRD, "constant.0.name", "My Account")
+	assertEqual(t, newRD, "constant.0.val", "My Account")
+	assertEqual(t, newRD, "constant.0.blk_id", "1")
+
+	assertEqual(t, newRD, "constant.1.constant_type", "Dynamic Group Block")
+	assertEqual(t, newRD, "constant.1.ref_id", "1")
+	assertEqual(t, newRD, "constant.1.name", "New Group")
 }
