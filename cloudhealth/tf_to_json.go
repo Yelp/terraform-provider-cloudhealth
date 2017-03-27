@@ -35,7 +35,11 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 	tfConstants := getArray(d, "constant")
 
 	if len(tfGroups) > 0 {
-		fixRefIDs(tfGroups, tfConstants)
+		err = fixRefIDs(tfGroups, tfConstants)
+		if err != nil {
+			return nil, err
+		}
+
 		err = d.Set("group", tfGroups)
 		if err != nil {
 			return nil, err
@@ -51,7 +55,7 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 		var constantType string
 		if tfGroup["type"].(string) == "categorize" {
 			// Convert any dynamic groups for this group (if it's a Dynamic Group Block)
-			dynamicGroupConstantItems := dynamicGroupConstantItemsToJson(refId, tfGroup["dynamic_group"].([]interface{}))
+			dynamicGroupConstantItems := dynamicGroupConstantItemsToJson(refId, tfConstants)
 			constantsByType[DynamicGroupType].List = append(constantsByType[DynamicGroupType].List, dynamicGroupConstantItems...)
 			constantType = DynamicGroupBlockType
 		} else if tfGroup["type"].(string) == "filter" {
@@ -92,58 +96,86 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 	return json.MarshalIndent(pj, "", "  ")
 }
 
-func fixRefIDs(groups []interface{}, constants []interface{}) {
-	// Goal of this is to reconcile the ref_id on groups with the ones in constants
-	refIdByNameFromBindings := make(map[string]string)
+func fixRefIDs(groups []interface{}, constants []interface{}) error {
+	/* This is to reconcile the ref_id on groups with the ones in constants.
+
+	   Groups are an ordered list and yet also identified by their ref_id.
+	   There's no direct way to express an ordered map in terraform schema, so we
+	   use a list. When groups are reordered, the computed ref_id fields stay put;
+	   they do not follow the rest of the groups contents.
+
+	   So we use the "constants" structure to reconcile these situations.
+
+	   If the group is renamed in-place, the new name won't have an entry in
+	   constants, so it's presumed to keep its ref_id.
+
+	   If the group is re-ordered, we look up the ref_ids by the name in the
+	   constants structure.
+
+	   If you both re-order and re-name, it will correct the ref_ids of all the
+	   other groups, but the reordered group with the new name will be given a
+	   new ref_id
+	*/
+
+	refIdByNameFromConstants := make(map[string]string)
 	for _, c := range constants {
 		c := c.(map[string]interface{})
-		refIdByNameFromBindings[c["name"].(string)] = c["ref_id"].(string)
+		refIdByNameFromConstants[c["name"].(string)] = c["ref_id"].(string)
 	}
 	usedRefIds := make(map[string]bool)
 
-	// Go through and apply the ref_id from the binding to anything that matches the same name in the group
+	// Go through and apply the ref_id from the constant to anything that matches the same name in the group
 	for _, g := range groups {
 		g := g.(map[string]interface{})
 		groupName := g["name"].(string)
-		if bindingRefId, ok := refIdByNameFromBindings[groupName]; ok {
-			g["ref_id"] = bindingRefId
-			usedRefIds[bindingRefId] = true
+		if constantRefId, ok := refIdByNameFromConstants[groupName]; ok {
+			g["ref_id"] = constantRefId
+			if usedRefIds[constantRefId] == true {
+				return fmt.Errorf("Two groups with the same name: %s", groupName)
+			}
+			usedRefIds[constantRefId] = true
 		}
 	}
 
-	// Now for any group who name is not in bindings, either use its exising
+	// Now for any group who name is not in constants, either use its exising
 	// ref_id (we assume this meant a rename) or, if it doesn't have one,
 	// generate a unique one
 	for _, g := range groups {
 		g := g.(map[string]interface{})
 		groupName := g["name"].(string)
-		groupRefId := g["ref_id"].(string)
-
-		_, inBindings := refIdByNameFromBindings[groupName]
-		if inBindings {
+		if _, inConstants := refIdByNameFromConstants[groupName]; inConstants {
+			// Already fixed ref_id above
 			continue
 		}
+
+		groupRefId := g["ref_id"].(string)
 		if groupRefId != "" && usedRefIds[groupRefId] == false {
 			// Group was renamed; stick with the existing groupRefId
 			continue
 		}
+
 		// Group is new - assign a new ref id
 		g["ref_id"], _ = uuid.GenerateUUID()
 	}
+
+	return nil
 }
 
-func dynamicGroupConstantItemsToJson(groupRefId string, dynamicGroups []interface{}) []ConstantItem {
-	result := make([]ConstantItem, len(dynamicGroups))
+func dynamicGroupConstantItemsToJson(groupRefId string, constants []interface{}) []ConstantItem {
+	result := make([]ConstantItem, 0)
 
-	for idx, dg := range dynamicGroups {
-		dg := dg.(map[string]interface{})
-		blk_id := groupRefId
-		result[idx] = ConstantItem{
-			Name:   dg["name"].(string),
-			Ref_id: dg["ref_id"].(string),
-			Blk_id: &blk_id,
-			Val:    dg["val"].(string),
+	for _, c := range constants {
+		c := c.(map[string]interface{})
+		if c["blk_id"] != groupRefId {
+			continue
 		}
+		blk_id := groupRefId
+		result = append(result, ConstantItem{
+			Name:   c["name"].(string),
+			Ref_id: c["ref_id"].(string),
+			Blk_id: &blk_id,
+			Val:    c["val"].(string),
+		})
 	}
 	return result
 }

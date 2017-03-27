@@ -71,14 +71,20 @@ func TestJsonToTFStatic(t *testing.T) {
 	assertEqual(t, rd, "group.2.rule.0.condition.0.val", "My Team")
 
 	assertEqual(t, rd, "constant.#", 4)
+	assertEqual(t, rd, "constant.0.constant_type", "Static Group")
 	assertEqual(t, rd, "constant.0.name", "Group One")
 	assertEqual(t, rd, "constant.0.ref_id", "1")
+
+	assertEqual(t, rd, "constant.2.constant_type", "Static Group")
 	assertEqual(t, rd, "constant.1.name", "Group Two")
 	assertEqual(t, rd, "constant.1.ref_id", "2")
+
+	assertEqual(t, rd, "constant.2.constant_type", "Static Group")
 	assertEqual(t, rd, "constant.2.name", "Group Three")
 	assertEqual(t, rd, "constant.2.ref_id", "3")
-	assertEqual(t, rd, "constant.3.name", "Other")
+
 	assertEqual(t, rd, "constant.3.constant_type", "Static Group")
+	assertEqual(t, rd, "constant.3.name", "Other")
 	assertEqual(t, rd, "constant.3.ref_id", "4")
 	assertEqual(t, rd, "constant.3.is_other", "true")
 }
@@ -134,10 +140,6 @@ func TestJsonToTFDynamic(t *testing.T) {
 	assertEqual(t, rd, "group.0.rule.0.condition.0.field.0", "Account Name")
 	assertEqual(t, rd, "group.0.rule.0.condition.0.op", "!=")
 	assertEqual(t, rd, "group.0.rule.0.condition.0.val", "Excluded Account")
-	assertEqual(t, rd, "group.0.dynamic_group.#", 1)
-	assertEqual(t, rd, "group.0.dynamic_group.0.ref_id", "5")
-	assertEqual(t, rd, "group.0.dynamic_group.0.name", "ValC")
-	assertEqual(t, rd, "group.0.dynamic_group.0.val", "ValC")
 	assertEqual(t, rd, "group.1.name", "Group Two")
 	assertEqual(t, rd, "group.1.ref_id", "2")
 	assertEqual(t, rd, "group.1.type", "categorize")
@@ -146,36 +148,60 @@ func TestJsonToTFDynamic(t *testing.T) {
 	assertEqual(t, rd, "group.1.rule.0.field.#", 1)
 	assertEqual(t, rd, "group.1.rule.0.field.0", "Cluster Identifier")
 	assertEqual(t, rd, "group.1.rule.0.condition.#", 0)
-	assertEqual(t, rd, "group.1.dynamic_group.#", 2)
-	assertEqual(t, rd, "group.1.dynamic_group.0.ref_id", "3")
-	assertEqual(t, rd, "group.1.dynamic_group.0.name", "ValA")
-	assertEqual(t, rd, "group.1.dynamic_group.0.val", "ValA")
-	assertEqual(t, rd, "group.1.dynamic_group.1.ref_id", "4")
-	assertEqual(t, rd, "group.1.dynamic_group.1.name", "ValB")
-	assertEqual(t, rd, "group.1.dynamic_group.1.val", "ValB")
 	assertEqual(t, rd, "constant.#", 7)
-	assertEqual(t, rd, "constant.5.ref_id", "7")
-	assertEqual(t, rd, "constant.5.constant_type", "Static Group")
-	assertEqual(t, rd, "constant.5.name", "Other")
-	assertEqual(t, rd, "constant.5.is_other", "true")
-	assertEqual(t, rd, "constant.6.ref_id", "6")
-	assertEqual(t, rd, "constant.6.constant_type", "Dynamic Group")
-	assertEqual(t, rd, "constant.6.name", "Remaining")
-	assertEqual(t, rd, "constant.6.val", "Remaining")
+
+	// These are populated in exactly the order that they're seen in the JSON
+	assertEqual(t, rd, "constant.0.constant_type", "Static Group")
+	assertEqual(t, rd, "constant.0.ref_id", "7")
+	assertEqual(t, rd, "constant.0.name", "Other")
+	assertEqual(t, rd, "constant.0.is_other", "true")
+
+	assertEqual(t, rd, "constant.1.constant_type", "Dynamic Group")
+	assertEqual(t, rd, "constant.1.ref_id", "5")
+	assertEqual(t, rd, "constant.1.blk_id", "1")
+	assertEqual(t, rd, "constant.1.name", "ValC")
+	assertEqual(t, rd, "constant.1.val", "ValC")
+
+	assertEqual(t, rd, "constant.2.constant_type", "Dynamic Group")
+	assertEqual(t, rd, "constant.2.ref_id", "3")
+	assertEqual(t, rd, "constant.2.blk_id", "2")
+	assertEqual(t, rd, "constant.2.name", "ValA")
+	assertEqual(t, rd, "constant.2.val", "ValA")
+
+	assertEqual(t, rd, "constant.3.constant_type", "Dynamic Group")
+	assertEqual(t, rd, "constant.3.ref_id", "4")
+	assertEqual(t, rd, "constant.3.blk_id", "2")
+	assertEqual(t, rd, "constant.3.name", "ValB")
+	assertEqual(t, rd, "constant.3.val", "ValB")
+
+	assertEqual(t, rd, "constant.4.constant_type", "Dynamic Group")
+	assertEqual(t, rd, "constant.4.ref_id", "6")
+	assertEqual(t, rd, "constant.4.name", "Remaining")
+	assertEqual(t, rd, "constant.4.val", "Remaining")
+
+	assertEqual(t, rd, "constant.5.constant_type", "Dynamic Group Block")
+	assertEqual(t, rd, "constant.5.ref_id", "1")
+	assertEqual(t, rd, "constant.5.name", "Group One")
+
+	assertEqual(t, rd, "constant.6.constant_type", "Dynamic Group Block")
+	assertEqual(t, rd, "constant.6.ref_id", "2")
+	assertEqual(t, rd, "constant.6.name", "Group Two")
 }
 
 func TestReorderGroup(t *testing.T) {
+	// Ensure that groups keep their ref_id values if they're reordered in config
+
 	// Step 0: Load perspective from JSON into a resource.Data
-	// Step 1: Specify a perspective with three groups. Verify ref_ids
 	// Step 2: Run plan on a new version of that config where groups are re-ordered. Verify refIds
 
+	// Load perspective from JSON into a resource.Data
 	resource := resourceCHTPerspective()
 	rd := resource.TestResourceData()
-
 	originalBytes, err := ioutil.ReadFile("../test/static_perspective.json")
 	err = jsonToTF(originalBytes, rd)
 	assert.Nil(t, err)
 
+	// Verify ref_ids
 	assertEqual(t, rd, "group.0.ref_id", "1")
 	assertEqual(t, rd, "group.1.ref_id", "2")
 	assertEqual(t, rd, "group.2.ref_id", "3")
@@ -187,18 +213,21 @@ func TestReorderGroup(t *testing.T) {
 		groups[0].(map[string]interface{}),
 		groups[2].(map[string]interface{}),
 	}
+
+	// Simulate the "breakage" of group.ref_id: they do not follow the list reordering, so they are still 1,2,3
 	newGroups[0]["ref_id"] = "1"
 	newGroups[1]["ref_id"] = "2"
 	newGroups[2]["ref_id"] = "3"
 	err = rd.Set("group", newGroups)
 	assert.Nil(t, err)
 
+	// Convert to json and back to TF
 	b, err := tfToJson(rd)
 	assert.Nil(t, err)
-
 	newRD := resource.TestResourceData()
 	jsonToTF(b, newRD)
 
+	// The group ref_ids should now be correct!
 	assertEqual(t, rd, "group.0.ref_id", "2")
 	assertEqual(t, rd, "group.1.ref_id", "1")
 	assertEqual(t, rd, "group.2.ref_id", "3")

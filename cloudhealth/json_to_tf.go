@@ -32,10 +32,6 @@ func jsonToTF(rawData []byte, d *schema.ResourceData) error {
 	}
 
 	groupByRef := jsonToGroups(pj)
-	err = populateDynamicGroups(pj, groupByRef)
-	if err != nil {
-		return err
-	}
 	groups, err := populateRules(pj, groupByRef)
 	if err != nil {
 		return err
@@ -69,7 +65,6 @@ func jsonToGroups(pj PerspectiveJSON) (groupByRef map[string]Group) {
 			group["ref_id"] = constantGroup.Ref_id
 			group["rule"] = make([]map[string]interface{}, 0)
 			if constant.Type == DynamicGroupBlockType {
-				group["dynamic_group"] = make([]map[string]interface{}, 0)
 				group["type"] = "categorize"
 			} else {
 				group["type"] = "filter"
@@ -78,33 +73,6 @@ func jsonToGroups(pj PerspectiveJSON) (groupByRef map[string]Group) {
 		}
 	}
 	return groupByRef
-}
-
-func populateDynamicGroups(pj PerspectiveJSON, groupByRef map[string]Group) error {
-	// Put dynamic groups within their Dynamic Group block
-	for _, constant := range pj.Schema.Constants {
-		if constant.Type != DynamicGroupType {
-			continue
-		}
-		for _, constantGroup := range constant.List {
-			if *constantGroup.Blk_id == "" {
-				// An "other" group, handled via buildConstants()
-				continue
-			}
-			group := make(Group)
-			group["name"] = constantGroup.Name
-			group["val"] = constantGroup.Val
-			group["ref_id"] = constantGroup.Ref_id
-			owningGroup := groupByRef[*constantGroup.Blk_id]
-			if owningGroup == nil {
-				return fmt.Errorf("Reference in %s to blk_id %s not found", constantGroup.Name, *constantGroup.Blk_id)
-			}
-			dynamicGroups := owningGroup["dynamic_group"].([]map[string]interface{})
-			owningGroup["dynamic_group"] = append(dynamicGroups, group)
-		}
-	}
-
-	return nil
 }
 
 func populateRules(pj PerspectiveJSON, groupByRef map[string]Group) (groups []Group, err error) {
