@@ -1,6 +1,7 @@
 package cloudhealth
 
 import (
+	"github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/yudai/gojsondiff"
@@ -228,9 +229,116 @@ func TestReorderGroup(t *testing.T) {
 	jsonToTF(b, newRD)
 
 	// The group ref_ids should now be correct!
-	assertEqual(t, rd, "group.0.ref_id", "2")
-	assertEqual(t, rd, "group.1.ref_id", "1")
-	assertEqual(t, rd, "group.2.ref_id", "3")
+	assertEqual(t, newRD, "group.0.ref_id", "2")
+	assertEqual(t, newRD, "group.1.ref_id", "1")
+	assertEqual(t, newRD, "group.2.ref_id", "3")
+}
+
+func TestRenameGroup(t *testing.T) {
+	resource := resourceCHTPerspective()
+	rd := resource.TestResourceData()
+	originalBytes, err := ioutil.ReadFile("../test/static_perspective.json")
+	err = jsonToTF(originalBytes, rd)
+	assert.Nil(t, err)
+
+	// Give second group a new name
+	groups := rd.Get("group").([]interface{})
+	groups[1].(map[string]interface{})["name"] = "My New Name"
+	err = rd.Set("group", groups)
+	assert.Nil(t, err)
+
+	// Convert to json and back to TF
+	b, err := tfToJson(rd)
+	assert.Nil(t, err)
+	newRD := resource.TestResourceData()
+	jsonToTF(b, newRD)
+
+	assertEqual(t, newRD, "group.0.ref_id", "1")
+	assertEqual(t, newRD, "group.0.name", "Group One")
+	assertEqual(t, newRD, "group.1.ref_id", "2")
+	assertEqual(t, newRD, "group.1.name", "My New Name")
+	assertEqual(t, newRD, "group.2.ref_id", "3")
+	assertEqual(t, newRD, "group.2.name", "Group Three")
+}
+
+func TestRenameAndReorderGroup(t *testing.T) {
+	resource := resourceCHTPerspective()
+	rd := resource.TestResourceData()
+	originalBytes, err := ioutil.ReadFile("../test/static_perspective.json")
+	err = jsonToTF(originalBytes, rd)
+	assert.Nil(t, err)
+
+	// Give second group a new name
+	groups := rd.Get("group").([]interface{})
+	groups[1].(map[string]interface{})["name"] = "My New Name"
+	err = rd.Set("group", groups)
+	assert.Nil(t, err)
+
+	// Simulate re-arranging groups via config - move 2 before 1
+	newGroups := []map[string]interface{}{
+		groups[1].(map[string]interface{}),
+		groups[0].(map[string]interface{}),
+		groups[2].(map[string]interface{}),
+	}
+
+	// Simulate the "breakage" of group.ref_id: they do not follow the list reordering, so they are still 1,2,3
+	newGroups[0]["ref_id"] = "1"
+	newGroups[1]["ref_id"] = "2"
+	newGroups[2]["ref_id"] = "3"
+
+	err = rd.Set("group", newGroups)
+	assert.Nil(t, err)
+
+	// Convert to json and back to TF
+	b, err := tfToJson(rd)
+	assert.Nil(t, err)
+	newRD := resource.TestResourceData()
+	jsonToTF(b, newRD)
+
+	// The ref_id for the first group should be a UUID
+	refId := rd.Get("group.0.ref_id").(string)
+	assert.NotEqual(t, refId, "2")
+	_, err = uuid.ParseUUID(refId)
+	assert.Nil(t, err)
+
+	assertEqual(t, newRD, "group.0.name", "My New Name")
+	assertEqual(t, newRD, "group.1.ref_id", "1")
+	assertEqual(t, newRD, "group.1.name", "Group One")
+	assertEqual(t, newRD, "group.2.ref_id", "3")
+	assertEqual(t, newRD, "group.2.name", "Group Three")
+}
+
+func TestRemoveDynamicGroupBlock(t *testing.T) {
+	resource := resourceCHTPerspective()
+	rd := resource.TestResourceData()
+	originalBytes, err := ioutil.ReadFile("../test/dynamic_perspective.json")
+	err = jsonToTF(originalBytes, rd)
+	assert.Nil(t, err)
+
+	// Remove Group One
+	groups := rd.Get("group").([]interface{})
+	newGroups := []map[string]interface{}{
+		groups[1].(map[string]interface{}),
+	}
+
+	// Simulate the "breakage" of group.ref_id: they do not follow the list
+	// reordering, so the second-now-first group has ref_id 1
+	newGroups[0]["ref_id"] = "2"
+	err = rd.Set("group", newGroups)
+	assert.Nil(t, err)
+
+	// Convert to json and back to TF
+	b, err := tfToJson(rd)
+	assert.Nil(t, err)
+	newRD := resource.TestResourceData()
+	jsonToTF(b, newRD)
+
+	// The group ref_ids should now be correct
+	assertEqual(t, newRD, "group.0.ref_id", "2")
+
+	// We should lose two constants: one for the Dynamic Group Block, and one
+	// for the Dynamic Group inside it
+	assertEqual(t, newRD, "constant.#", 5)
 }
 
 func assertEqual(t *testing.T, rd *schema.ResourceData, field string, expected interface{}) {

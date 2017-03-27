@@ -239,6 +239,8 @@ func resourceCHTPerspectiveUpdate(d *schema.ResourceData, meta interface{}) erro
 		return err
 	}
 
+	ioutil.WriteFile("cht_update.json", pj, 0644)
+
 	id, err := strconv.Atoi(d.Id())
 	if err != nil {
 		return fmt.Errorf("Failed to parse %s as int because %s", d.Id(), err)
