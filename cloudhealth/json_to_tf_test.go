@@ -31,7 +31,7 @@ func TestJsonToTFStatic(t *testing.T) {
 
 	assertEqual(t, rd, "name", "My Name")
 	assertEqual(t, rd, "include_in_reports", true)
-	assertEqual(t, rd, "group.#", 2)
+	assertEqual(t, rd, "group.#", 3)
 	assertEqual(t, rd, "group.0.name", "Group One")
 	assertEqual(t, rd, "group.0.type", "filter")
 	assertEqual(t, rd, "group.0.ref_id", "1")
@@ -42,8 +42,10 @@ func TestJsonToTFStatic(t *testing.T) {
 	assertEqual(t, rd, "group.0.rule.0.condition.0.field.0", "Account Name")
 	assertEqual(t, rd, "group.0.rule.0.condition.0.op", "=")
 	assertEqual(t, rd, "group.0.rule.0.condition.0.val", "My Account")
+
 	assertEqual(t, rd, "group.1.name", "Group Two")
 	assertEqual(t, rd, "group.1.ref_id", "2")
+	assertEqual(t, rd, "group.1.type", "filter")
 	assertEqual(t, rd, "group.1.rule.#", 1)
 	assertEqual(t, rd, "group.1.rule.0.asset", "AwsAccount")
 	assertEqual(t, rd, "group.1.rule.0.combine_with", "OR")
@@ -56,11 +58,29 @@ func TestJsonToTFStatic(t *testing.T) {
 	assertEqual(t, rd, "group.1.rule.0.condition.1.field.0", "Account Name")
 	assertEqual(t, rd, "group.1.rule.0.condition.1.op", "Contains")
 	assertEqual(t, rd, "group.1.rule.0.condition.1.val", "Another Account")
-	assertEqual(t, rd, "other_group.#", 1)
-	assertEqual(t, rd, "other_group.0.name", "Other")
-	assertEqual(t, rd, "other_group.0.constant_type", "Static Group")
-	assertEqual(t, rd, "other_group.0.ref_id", "3")
-	assertEqual(t, rd, "other_group.0.is_other", "true")
+
+	assertEqual(t, rd, "group.2.name", "Group Three")
+	assertEqual(t, rd, "group.2.rule.#", 1)
+	assertEqual(t, rd, "group.2.type", "filter")
+	assertEqual(t, rd, "group.2.rule.0.asset", "AwsAsset")
+	assertEqual(t, rd, "group.2.rule.0.condition.#", 1)
+	assertEqual(t, rd, "group.2.rule.0.condition.0.field.#", 0)
+	assertEqual(t, rd, "group.2.rule.0.condition.0.tag_field.#", 1)
+	assertEqual(t, rd, "group.2.rule.0.condition.0.tag_field.0", "team")
+	assertEqual(t, rd, "group.2.rule.0.condition.0.op", "=")
+	assertEqual(t, rd, "group.2.rule.0.condition.0.val", "My Team")
+
+	assertEqual(t, rd, "constant.#", 4)
+	assertEqual(t, rd, "constant.0.name", "Group One")
+	assertEqual(t, rd, "constant.0.ref_id", "1")
+	assertEqual(t, rd, "constant.1.name", "Group Two")
+	assertEqual(t, rd, "constant.1.ref_id", "2")
+	assertEqual(t, rd, "constant.2.name", "Group Three")
+	assertEqual(t, rd, "constant.2.ref_id", "3")
+	assertEqual(t, rd, "constant.3.name", "Other")
+	assertEqual(t, rd, "constant.3.constant_type", "Static Group")
+	assertEqual(t, rd, "constant.3.ref_id", "4")
+	assertEqual(t, rd, "constant.3.is_other", "true")
 }
 
 func TestJsonToTFToJsonDynamic(t *testing.T) {
@@ -133,15 +153,55 @@ func TestJsonToTFDynamic(t *testing.T) {
 	assertEqual(t, rd, "group.1.dynamic_group.1.ref_id", "4")
 	assertEqual(t, rd, "group.1.dynamic_group.1.name", "ValB")
 	assertEqual(t, rd, "group.1.dynamic_group.1.val", "ValB")
-	assertEqual(t, rd, "other_group.#", 2)
-	assertEqual(t, rd, "other_group.0.ref_id", "7")
-	assertEqual(t, rd, "other_group.0.constant_type", "Static Group")
-	assertEqual(t, rd, "other_group.0.name", "Other")
-	assertEqual(t, rd, "other_group.0.is_other", "true")
-	assertEqual(t, rd, "other_group.1.ref_id", "6")
-	assertEqual(t, rd, "other_group.1.constant_type", "Dynamic Group")
-	assertEqual(t, rd, "other_group.1.name", "Remaining")
-	assertEqual(t, rd, "other_group.1.val", "Remaining")
+	assertEqual(t, rd, "constant.#", 7)
+	assertEqual(t, rd, "constant.5.ref_id", "7")
+	assertEqual(t, rd, "constant.5.constant_type", "Static Group")
+	assertEqual(t, rd, "constant.5.name", "Other")
+	assertEqual(t, rd, "constant.5.is_other", "true")
+	assertEqual(t, rd, "constant.6.ref_id", "6")
+	assertEqual(t, rd, "constant.6.constant_type", "Dynamic Group")
+	assertEqual(t, rd, "constant.6.name", "Remaining")
+	assertEqual(t, rd, "constant.6.val", "Remaining")
+}
+
+func TestReorderGroup(t *testing.T) {
+	// Step 0: Load perspective from JSON into a resource.Data
+	// Step 1: Specify a perspective with three groups. Verify ref_ids
+	// Step 2: Run plan on a new version of that config where groups are re-ordered. Verify refIds
+
+	resource := resourceCHTPerspective()
+	rd := resource.TestResourceData()
+
+	originalBytes, err := ioutil.ReadFile("../test/static_perspective.json")
+	err = jsonToTF(originalBytes, rd)
+	assert.Nil(t, err)
+
+	assertEqual(t, rd, "group.0.ref_id", "1")
+	assertEqual(t, rd, "group.1.ref_id", "2")
+	assertEqual(t, rd, "group.2.ref_id", "3")
+
+	// Simulate re-arranging groups via config - move 2 before 1
+	groups := rd.Get("group").([]interface{})
+	newGroups := []map[string]interface{}{
+		groups[1].(map[string]interface{}),
+		groups[0].(map[string]interface{}),
+		groups[2].(map[string]interface{}),
+	}
+	newGroups[0]["ref_id"] = "1"
+	newGroups[1]["ref_id"] = "2"
+	newGroups[2]["ref_id"] = "3"
+	err = rd.Set("group", newGroups)
+	assert.Nil(t, err)
+
+	b, err := tfToJson(rd)
+	assert.Nil(t, err)
+
+	newRD := resource.TestResourceData()
+	jsonToTF(b, newRD)
+
+	assertEqual(t, rd, "group.0.ref_id", "2")
+	assertEqual(t, rd, "group.1.ref_id", "1")
+	assertEqual(t, rd, "group.2.ref_id", "3")
 }
 
 func assertEqual(t *testing.T, rd *schema.ResourceData, field string, expected interface{}) {

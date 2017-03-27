@@ -32,10 +32,10 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 	pj.Schema.Include_in_reports = strconv.FormatBool(includeInReports.(bool))
 
 	tfGroups := getArray(d, "group")
-	otherGroups := getArray(d, "other_group")
+	tfConstants := getArray(d, "constant")
 
 	if len(tfGroups) > 0 {
-		fillInMissingRefIDs(tfGroups, otherGroups)
+		fixRefIDs(tfGroups, tfConstants)
 		err = d.Set("group", tfGroups)
 		if err != nil {
 			return nil, err
@@ -46,6 +46,7 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 		tfGroup := tfGroup.(map[string]interface{})
 		refId := tfGroup["ref_id"].(string)
 		name := tfGroup["name"].(string)
+		groupType := tfGroup["type"].(string)
 
 		var constantType string
 		if tfGroup["type"].(string) == "categorize" {
@@ -60,7 +61,7 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 		}
 
 		// Convert any rules
-		rules, err := rulesToJson(refId, name, constantType, tfGroup["rule"].([]interface{}))
+		rules, err := rulesToJson(refId, name, groupType, tfGroup["rule"].([]interface{}))
 		if err != nil {
 			return nil, err
 		}
@@ -75,16 +76,9 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 		constant.List = append(constant.List, constantItem)
 	}
 
-	// Add constants for all other_group entries
-	for _, otherGroup := range otherGroups {
-		otherGroup := otherGroup.(map[string]interface{})
-		constantType, constantItem := otherGroupToJson(otherGroup)
-
-		constant := constantsByType[constantType]
-		if constant == nil {
-			return nil, fmt.Errorf("Unknown constant type %s", constantType)
-		}
-		constant.List = append(constant.List, constantItem)
+	err = addOtherConstants(tfConstants, constantsByType)
+	if err != nil {
+		return nil, err
 	}
 
 	// Only add constants that have something in them
@@ -98,12 +92,43 @@ func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
 	return json.MarshalIndent(pj, "", "  ")
 }
 
-func fillInMissingRefIDs(groups []interface{}, otherGroups []interface{}) {
+func fixRefIDs(groups []interface{}, constants []interface{}) {
+	// Goal of this is to reconcile the ref_id on groups with the ones in constants
+	refIdByNameFromBindings := make(map[string]string)
+	for _, c := range constants {
+		c := c.(map[string]interface{})
+		refIdByNameFromBindings[c["name"].(string)] = c["ref_id"].(string)
+	}
+	usedRefIds := make(map[string]bool)
+
+	// Go through and apply the ref_id from the binding to anything that matches the same name in the group
 	for _, g := range groups {
 		g := g.(map[string]interface{})
-		if g["ref_id"].(string) == "" {
-			g["ref_id"], _ = uuid.GenerateUUID()
+		groupName := g["name"].(string)
+		if bindingRefId, ok := refIdByNameFromBindings[groupName]; ok {
+			g["ref_id"] = bindingRefId
+			usedRefIds[bindingRefId] = true
 		}
+	}
+
+	// Now for any group who name is not in bindings, either use its exising
+	// ref_id (we assume this meant a rename) or, if it doesn't have one,
+	// generate a unique one
+	for _, g := range groups {
+		g := g.(map[string]interface{})
+		groupName := g["name"].(string)
+		groupRefId := g["ref_id"].(string)
+
+		_, inBindings := refIdByNameFromBindings[groupName]
+		if inBindings {
+			continue
+		}
+		if groupRefId != "" && usedRefIds[groupRefId] == false {
+			// Group was renamed; stick with the existing groupRefId
+			continue
+		}
+		// Group is new - assign a new ref id
+		g["ref_id"], _ = uuid.GenerateUUID()
 	}
 }
 
@@ -123,7 +148,7 @@ func dynamicGroupConstantItemsToJson(groupRefId string, dynamicGroups []interfac
 	return result
 }
 
-func rulesToJson(groupRefId string, groupName string, constantType string, rules []interface{}) (result []RuleJSON, err error) {
+func rulesToJson(groupRefId string, groupName string, groupType string, rules []interface{}) (result []RuleJSON, err error) {
 	result = make([]RuleJSON, len(rules))
 
 	for ruleIdx, r := range rules {
@@ -131,15 +156,14 @@ func rulesToJson(groupRefId string, groupName string, constantType string, rules
 
 		rj := &result[ruleIdx]
 
-		if constantType == DynamicGroupBlockType {
+		rj.Type = groupType
+		if groupType == "categorize" {
 			rj.Ref_id = groupRefId
-			rj.Type = "categorize"
 			rj.Name = groupName
-		} else if constantType == StaticGroupType {
+		} else if groupType == "filter" {
 			rj.To = groupRefId
-			rj.Type = "filter"
 		} else {
-			return nil, fmt.Errorf("Unrecognized group type %s", constantType)
+			return nil, fmt.Errorf("Unrecognized group type %s", groupType)
 		}
 
 		rj.Asset = stringOrNil(r["asset"])
@@ -174,21 +198,43 @@ func conditionsToJson(conditions []interface{}, combineWith string) (result *Con
 	return result
 }
 
-func otherGroupToJson(otherGroup map[string]interface{}) (constantType string, constantItem ConstantItem) {
-	constantType = otherGroup["constant_type"].(string)
+func constantToJson(tfConstant map[string]interface{}) (constantType string, constantItem ConstantItem) {
+	constantType = tfConstant["constant_type"].(string)
 	constantItem = ConstantItem{
-		Ref_id: stringOrNil(otherGroup["ref_id"]),
-		Name:   stringOrNil(otherGroup["name"]),
-		Val:    stringOrNil(otherGroup["val"]),
+		Ref_id: stringOrNil(tfConstant["ref_id"]),
+		Name:   stringOrNil(tfConstant["name"]),
+		Val:    stringOrNil(tfConstant["val"]),
 	}
 	if constantType == DynamicGroupType {
-		blk_id := stringOrNil(otherGroup["blk_id"])
+		blk_id := stringOrNil(tfConstant["blk_id"])
 		constantItem.Blk_id = &blk_id
 	}
-	if stringOrNil(otherGroup["is_other"]) == "true" {
+	if stringOrNil(tfConstant["is_other"]) == "true" {
 		constantItem.Is_other = "true"
 	}
 	return constantType, constantItem
+}
+
+func addOtherConstants(tfConstants []interface{}, constantsByType map[string]*ConstantJSON) error {
+	// Add "other" constants
+	// These are constants that have literally is_other == "true" or dynamic
+	// groups with empty blk_ids
+	for _, tfConstant := range tfConstants {
+		tfConstant := tfConstant.(map[string]interface{})
+
+		if tfConstant["is_other"].(string) == "true" ||
+			(tfConstant["constant_type"].(string) == DynamicGroupType && tfConstant["blk_id"] == "") {
+
+			constantType, constantItem := constantToJson(tfConstant)
+
+			constant := constantsByType[constantType]
+			if constant == nil {
+				return fmt.Errorf("Unknown constant type %s", constantType)
+			}
+			constant.List = append(constant.List, constantItem)
+		}
+	}
+	return nil
 }
 
 func convertStringArray(maybeStringArray interface{}) []string {

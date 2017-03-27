@@ -153,7 +153,7 @@ func resourceCHTPerspective() *schema.Resource {
 					},
 				},
 			},
-			"other_group": &schema.Schema{
+			"constant": &schema.Schema{
 				Type:     schema.TypeList,
 				Optional: true,
 				ForceNew: false,

@@ -41,11 +41,11 @@ func jsonToTF(rawData []byte, d *schema.ResourceData) error {
 		return err
 	}
 
-	otherGroups := findOtherGroups(pj)
+	constants := buildConstants(pj)
 
 	d.Set("group", groups)
 
-	err = d.Set("other_group", otherGroups)
+	err = d.Set("constant", constants)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func jsonToGroups(pj PerspectiveJSON) (groupByRef map[string]Group) {
 		}
 		for _, constantGroup := range constant.List {
 			if constantGroup.Is_other == "true" {
-				// Handled by findOtherGroups()
+				// An "other" group, solely handled by buildConstants()
 				continue
 			}
 			group := make(Group)
@@ -88,7 +88,7 @@ func populateDynamicGroups(pj PerspectiveJSON, groupByRef map[string]Group) erro
 		}
 		for _, constantGroup := range constant.List {
 			if *constantGroup.Blk_id == "" {
-				// Handled via findOtherGroups
+				// An "other" group, handled via buildConstants()
 				continue
 			}
 			group := make(Group)
@@ -177,25 +177,22 @@ func buildCondition(jsonClauses []ClauseJSON) (clauses []map[string]interface{})
 	return clauses
 }
 
-func findOtherGroups(pj PerspectiveJSON) []Group {
+func buildConstants(pj PerspectiveJSON) []Group {
 	result := make([]Group, 0)
-	for _, constant := range pj.Schema.Constants {
-		for _, constantGroup := range constant.List {
-			if constantGroup.Is_other == "true" ||
-				(constant.Type == DynamicGroupType && *constantGroup.Blk_id == "") {
-				otherGroup := Group{
-					"constant_type": constant.Type,
-					"ref_id":        constantGroup.Ref_id,
-					"name":          constantGroup.Name,
-					"val":           constantGroup.Val,
-					"is_other":      constantGroup.Is_other,
-				}
-				if constantGroup.Blk_id != nil {
-					otherGroup["blk_id"] = *constantGroup.Blk_id
-				}
-
-				result = append(result, otherGroup)
+	for _, jsonConstant := range pj.Schema.Constants {
+		for _, jsonConstantGroup := range jsonConstant.List {
+			constant := Group{
+				"constant_type": jsonConstant.Type,
+				"ref_id":        jsonConstantGroup.Ref_id,
+				"name":          jsonConstantGroup.Name,
+				"val":           jsonConstantGroup.Val,
+				"is_other":      jsonConstantGroup.Is_other,
 			}
+			if jsonConstantGroup.Blk_id != nil {
+				constant["blk_id"] = *jsonConstantGroup.Blk_id
+			}
+
+			result = append(result, constant)
 		}
 	}
 
