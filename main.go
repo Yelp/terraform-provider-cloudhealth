@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/bchess/terraform-provider-cloudhealth/cloudhealth"
+	"github.com/Yelp/terraform-provider-cloudhealth/cloudhealth"
 	"github.com/hashicorp/terraform/plugin"
 )
 

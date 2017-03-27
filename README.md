@@ -4,7 +4,7 @@ Supports Cloudhealth perspectives as a Terraform resource
 
 ## Install
 ```
-$ go get github.com/bchess/terraform-provider-cloudhealth
+$ go get github.com/Yelp/terraform-provider-cloudhealth
 $ make
 ```
 

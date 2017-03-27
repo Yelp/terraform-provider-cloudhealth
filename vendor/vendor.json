@@ -503,5 +503,5 @@
 			"revisionTime": "2017-02-27T22:09:00Z"
 		}
 	],
-	"rootPath": "github.com/bchess/terraform-provider-cloudhealth"
+	"rootPath": "github.com/Yelp/terraform-provider-cloudhealth"
 }
