@@ -2,7 +2,7 @@
 PROJECT = terraform-provider-cloudhealth
 
 VERSION = 1.0
-ITERATION = yelp1
+ITERATION = yelp2
 TFVERSION = 0.8
 ARCH := $(shell facter architecture)
 
