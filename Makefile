@@ -19,14 +19,14 @@ clean:
 	rm -rf dist/
 	make -C yelppack clean
 
-terraform-provider-cloudhealth: *.go cloudhealth/*.go vendor
+terraform-provider-cloudhealth: *.go cloudhealth/*.go
 	go build
 
 #
 # Yelp-specific packaging
 #
 .PHONY: itest_%
-itest_%: vendor
+itest_%:
 	mkdir -p dist
 	make -C yelppack $@
 
