@@ -1,7 +1,6 @@
 package cloudhealth
 
 import (
-	"github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/yudai/gojsondiff"
@@ -295,11 +294,10 @@ func TestRenameAndReorderGroup(t *testing.T) {
 	newRD := resource.TestResourceData()
 	jsonToTF(b, newRD)
 
-	// The ref_id for the first group should be a UUID
+	// The first ref_id should be a higher int than the rest of the items in constants
 	refId := rd.Get("group.0.ref_id").(string)
 	assert.NotEqual(t, refId, "2")
-	_, err = uuid.ParseUUID(refId)
-	assert.Nil(t, err)
+	assert.Equal(t, "5", refId)
 
 	assertEqual(t, newRD, "group.0.name", "My New Name")
 	assertEqual(t, newRD, "group.1.ref_id", "1")
