@@ -3,12 +3,13 @@ package cloudhealth
 import (
 	"bytes"
 	"fmt"
-	"github.com/hashicorp/terraform/helper/schema"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"regexp"
 	"strconv"
+
+	"github.com/hashicorp/terraform/helper/schema"
 )
 
 const apiUrl string = "https://chapi.cloudhealthtech.com/v1/perspective_schemas"
@@ -182,13 +183,21 @@ func resourceCHTPerspectiveCreate(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	url := fmt.Sprintf("%s?api_key=%s", apiUrl, key)
+	log.Println("Posting to Cloudhealth: url %s data, %s", apiUrl, string(pj))
 	resp, err := http.Post(url, "application/json", bytes.NewReader(pj))
 	if err != nil {
-		return fmt.Errorf("Failed to create perspective because %s", err)
+
+		body, _ := ioutil.ReadAll(resp.Body)
+		bodyStr := string(body)
+		log.Println("Response to Cloudhealth POST is:", bodyStr)
+		return fmt.Errorf("Failed to create perspective because %s, response %s", err, bodyStr)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
+		bodyStr := string(body)
+		log.Println("Response to Cloudhealth POST is:", bodyStr)
 		return fmt.Errorf("Failed to create perspective %s because got status code %d", d.Id(), resp.StatusCode)
 	}
 
