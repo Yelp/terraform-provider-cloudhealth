@@ -35,6 +35,11 @@ func resourceCHTPerspective() *schema.Resource {
 				Required: true,
 				ForceNew: false,
 			},
+			"hard_delete": &schema.Schema{
+				Type:     schema.TypeBool,
+				Optional: true,
+				ForceNew: false,
+			},
 			"group": &schema.Schema{
 				Type:     schema.TypeList,
 				Optional: true,
@@ -210,9 +215,14 @@ func resourceCHTPerspectiveCreate(d *schema.ResourceData, meta interface{}) erro
 	if match == nil || len(match) != 2 {
 		return fmt.Errorf("Created perspective but didn't understand response to extract ID: %s", body)
 	}
+	bodyStr := string(body)
+	log.Println("[INFO] Response to Cloudhealth POST is:", bodyStr)
 	d.SetId(match[1])
 
-	return nil
+	// We need to set the constants field to what cloudhealth thinks it is, as
+	// its computed we need to read it back from cloudhealth - easiest to do that
+	// by using the read method
+	return resourceCHTPerspectiveRead(d, meta)
 }
 
 func resourceCHTPerspectiveRead(d *schema.ResourceData, meta interface{}) error {
@@ -292,7 +302,8 @@ func resourceCHTPerspectiveDelete(d *schema.ResourceData, meta interface{}) erro
 		return fmt.Errorf("Failed to parse %s as int because %s", d.Id(), err)
 	}
 
-	url := fmt.Sprintf("%s/%d?api_key=%s", apiUrl, id, key)
+	hard_delete := d.Get("hard_delete")
+	url := fmt.Sprintf("%s/%d?api_key=%s&hard_delete=%t", apiUrl, id, key, hard_delete)
 
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
