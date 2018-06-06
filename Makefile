@@ -10,7 +10,7 @@ vet:
 	go tool vet *.go cloudhealth/*.go
 
 .PHONY: test
-test:
+test: vendor
 	go test ./cloudhealth
 
 .PHONY: clean

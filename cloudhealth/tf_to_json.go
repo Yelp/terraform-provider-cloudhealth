@@ -3,9 +3,9 @@ package cloudhealth
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/go-uuid"
-	"github.com/hashicorp/terraform/helper/schema"
 	"strconv"
+
+	"github.com/hashicorp/terraform/helper/schema"
 )
 
 func tfToJson(d *schema.ResourceData) (rawData []byte, err error) {
@@ -118,9 +118,17 @@ func fixRefIDs(groups []interface{}, constants []interface{}) error {
 	*/
 
 	refIdByNameFromConstants := make(map[string]string)
+	maxRefId := 0
 	for _, c := range constants {
 		c := c.(map[string]interface{})
 		refIdByNameFromConstants[c["name"].(string)] = c["ref_id"].(string)
+		constantRefIdInt, err := strconv.Atoi(c["ref_id"].(string))
+		if err != nil {
+			return fmt.Errorf("Group with non integer ref_id: %s", c["ref_id"])
+		}
+		if constantRefIdInt >= maxRefId {
+			maxRefId = constantRefIdInt + 1
+		}
 	}
 	usedRefIds := make(map[string]bool)
 
@@ -155,7 +163,9 @@ func fixRefIDs(groups []interface{}, constants []interface{}) error {
 		}
 
 		// Group is new - assign a new ref id
-		g["ref_id"], _ = uuid.GenerateUUID()
+		// Must be an integer that is not already in use
+		g["ref_id"] = strconv.Itoa(maxRefId)
+		maxRefId++
 	}
 
 	return nil

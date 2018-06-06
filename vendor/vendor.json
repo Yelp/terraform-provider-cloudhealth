@@ -345,6 +345,12 @@
 			"revisionTime": "2017-03-02T18:46:09Z"
 		},
 		{
+			"checksumSHA1": "vt+P9D2yWDO3gdvdgCzwqunlhxU=",
+			"path": "github.com/hashicorp/logutils",
+			"revision": "0dc08b1671f34c4250ce212759ebd880f743d883",
+			"revisionTime": "2015-06-09T07:04:31Z"
+		},
+		{
 			"checksumSHA1": "qBDBuBUz/eexkSEBpGpwhzzUqao=",
 			"path": "github.com/hashicorp/terraform/config",
 			"revision": "403a86dc557fae52f8e39676b11e1e4356b7d1a2",
@@ -369,6 +375,12 @@
 			"revisionTime": "2017-03-02T18:46:09Z"
 		},
 		{
+			"checksumSHA1": "uT6Q9RdSRAkDjyUgQlJ2XKJRab4=",
+			"path": "github.com/hashicorp/terraform/helper/config",
+			"revision": "0cc9e050ecd4a46ba6448758c2edc0b29bef5695",
+			"revisionTime": "2018-05-03T10:44:00Z"
+		},
+		{
 			"checksumSHA1": "3paXG5PoE+gIqEcjTyj5g+1VdaY=",
 			"path": "github.com/hashicorp/terraform/helper/experiment",
 			"revision": "403a86dc557fae52f8e39676b11e1e4356b7d1a2",
@@ -385,6 +397,20 @@
 			"path": "github.com/hashicorp/terraform/helper/hilmapstructure",
 			"revision": "403a86dc557fae52f8e39676b11e1e4356b7d1a2",
 			"revisionTime": "2017-03-02T18:46:09Z"
+		},
+		{
+			"checksumSHA1": "BAXV9ruAyno3aFgwYI2/wWzB2Gc=",
+			"path": "github.com/hashicorp/terraform/helper/logging",
+			"revision": "0cc9e050ecd4a46ba6448758c2edc0b29bef5695",
+			"revisionTime": "2018-05-03T10:44:00Z"
+		},
+		{
+			"checksumSHA1": "Nb3GUzvifZ0t8dzn7gsYPaAzk/o=",
+			"path": "github.com/hashicorp/terraform/helper/resource",
+			"revision": "403a86dc557fae52f8e39676b11e1e4356b7d1a2",
+			"revisionTime": "2017-03-02T18:46:09Z",
+			"version": "v0.8.8",
+			"versionExact": "v0.8.8"
 		},
 		{
 			"checksumSHA1": "QQsXmqgnDRaxos6tsZEuR/5AF0M=",

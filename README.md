@@ -123,3 +123,20 @@ configuration.
 Merges are not supported. Nor are dynamic groups that include additional
 "filter" rules. You may get errors if you attemp to import a perspective that
 has either of these things.
+
+## Tests
+
+To run the tests, use
+
+```
+go test
+```
+
+To run acceptance tests, you must follow the instructions in [provider
+configuration](#provider-configuration) to set the `CHT_API_KEY` env variable.
+You must then run
+```
+TF_ACC=1 go test -v
+```
+
+Its probably also useful to enable logging by setting the `TF_LOG` env variable

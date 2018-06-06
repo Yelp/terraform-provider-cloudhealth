@@ -3,12 +3,13 @@ package cloudhealth
 import (
 	"bytes"
 	"fmt"
-	"github.com/hashicorp/terraform/helper/schema"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"regexp"
 	"strconv"
+
+	"github.com/hashicorp/terraform/helper/schema"
 )
 
 const apiUrl string = "https://chapi.cloudhealthtech.com/v1/perspective_schemas"
@@ -32,6 +33,11 @@ func resourceCHTPerspective() *schema.Resource {
 			"include_in_reports": &schema.Schema{
 				Type:     schema.TypeBool,
 				Required: true,
+				ForceNew: false,
+			},
+			"hard_delete": &schema.Schema{
+				Type:     schema.TypeBool,
+				Optional: true,
 				ForceNew: false,
 			},
 			"group": &schema.Schema{
@@ -182,13 +188,21 @@ func resourceCHTPerspectiveCreate(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	url := fmt.Sprintf("%s?api_key=%s", apiUrl, key)
+	log.Println("Posting to Cloudhealth: url %s data, %s", apiUrl, string(pj))
 	resp, err := http.Post(url, "application/json", bytes.NewReader(pj))
 	if err != nil {
-		return fmt.Errorf("Failed to create perspective because %s", err)
+
+		body, _ := ioutil.ReadAll(resp.Body)
+		bodyStr := string(body)
+		log.Println("Response to Cloudhealth POST is:", bodyStr)
+		return fmt.Errorf("Failed to create perspective because %s, response %s", err, bodyStr)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
+		bodyStr := string(body)
+		log.Println("Response to Cloudhealth POST is:", bodyStr)
 		return fmt.Errorf("Failed to create perspective %s because got status code %d", d.Id(), resp.StatusCode)
 	}
 
@@ -201,9 +215,14 @@ func resourceCHTPerspectiveCreate(d *schema.ResourceData, meta interface{}) erro
 	if match == nil || len(match) != 2 {
 		return fmt.Errorf("Created perspective but didn't understand response to extract ID: %s", body)
 	}
+	bodyStr := string(body)
+	log.Println("[INFO] Response to Cloudhealth POST is:", bodyStr)
 	d.SetId(match[1])
 
-	return nil
+	// We need to set the constants field to what cloudhealth thinks it is, as
+	// its computed we need to read it back from cloudhealth - easiest to do that
+	// by using the read method
+	return resourceCHTPerspectiveRead(d, meta)
 }
 
 func resourceCHTPerspectiveRead(d *schema.ResourceData, meta interface{}) error {
@@ -283,7 +302,8 @@ func resourceCHTPerspectiveDelete(d *schema.ResourceData, meta interface{}) erro
 		return fmt.Errorf("Failed to parse %s as int because %s", d.Id(), err)
 	}
 
-	url := fmt.Sprintf("%s/%d?api_key=%s", apiUrl, id, key)
+	hard_delete := d.Get("hard_delete")
+	url := fmt.Sprintf("%s/%d?api_key=%s&hard_delete=%t", apiUrl, id, key, hard_delete)
 
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
