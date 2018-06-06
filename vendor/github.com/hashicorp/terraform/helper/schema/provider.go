@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/terraform/config"
+	"github.com/hashicorp/terraform/config/configschema"
 	"github.com/hashicorp/terraform/terraform"
 )
 
@@ -50,8 +52,15 @@ type Provider struct {
 	// See the ConfigureFunc documentation for more information.
 	ConfigureFunc ConfigureFunc
 
+	// MetaReset is called by TestReset to reset any state stored in the meta
+	// interface.  This is especially important if the StopContext is stored by
+	// the provider.
+	MetaReset func() error
+
 	meta interface{}
 
+	// a mutex is required because TestReset can directly repalce the stopCtx
+	stopMu        sync.Mutex
 	stopCtx       context.Context
 	stopCtxCancel context.CancelFunc
 	stopOnce      sync.Once
@@ -82,6 +91,13 @@ func (p *Provider) InternalValidate() error {
 		validationErrors = multierror.Append(validationErrors, err)
 	}
 
+	// Provider-specific checks
+	for k, _ := range sm {
+		if isReservedProviderFieldName(k) {
+			return fmt.Errorf("%s is a reserved field name for a provider", k)
+		}
+	}
+
 	for k, r := range p.ResourcesMap {
 		if err := r.InternalValidate(nil, true); err != nil {
 			validationErrors = multierror.Append(validationErrors, fmt.Errorf("resource %s: %s", k, err))
@@ -95,6 +111,15 @@ func (p *Provider) InternalValidate() error {
 	}
 
 	return validationErrors
+}
+
+func isReservedProviderFieldName(name string) bool {
+	for _, reservedName := range config.ReservedProviderFields {
+		if name == reservedName {
+			return true
+		}
+	}
+	return false
 }
 
 // Meta returns the metadata associated with this provider that was
@@ -124,18 +149,64 @@ func (p *Provider) Stopped() bool {
 // StopCh returns a channel that is closed once the provider is stopped.
 func (p *Provider) StopContext() context.Context {
 	p.stopOnce.Do(p.stopInit)
+
+	p.stopMu.Lock()
+	defer p.stopMu.Unlock()
+
 	return p.stopCtx
 }
 
 func (p *Provider) stopInit() {
+	p.stopMu.Lock()
+	defer p.stopMu.Unlock()
+
 	p.stopCtx, p.stopCtxCancel = context.WithCancel(context.Background())
 }
 
 // Stop implementation of terraform.ResourceProvider interface.
 func (p *Provider) Stop() error {
 	p.stopOnce.Do(p.stopInit)
+
+	p.stopMu.Lock()
+	defer p.stopMu.Unlock()
+
 	p.stopCtxCancel()
 	return nil
+}
+
+// TestReset resets any state stored in the Provider, and will call TestReset
+// on Meta if it implements the TestProvider interface.
+// This may be used to reset the schema.Provider at the start of a test, and is
+// automatically called by resource.Test.
+func (p *Provider) TestReset() error {
+	p.stopInit()
+	if p.MetaReset != nil {
+		return p.MetaReset()
+	}
+	return nil
+}
+
+// GetSchema implementation of terraform.ResourceProvider interface
+func (p *Provider) GetSchema(req *terraform.ProviderSchemaRequest) (*terraform.ProviderSchema, error) {
+	resourceTypes := map[string]*configschema.Block{}
+	dataSources := map[string]*configschema.Block{}
+
+	for _, name := range req.ResourceTypes {
+		if r, exists := p.ResourcesMap[name]; exists {
+			resourceTypes[name] = r.CoreConfigSchema()
+		}
+	}
+	for _, name := range req.DataSources {
+		if r, exists := p.DataSourcesMap[name]; exists {
+			dataSources[name] = r.CoreConfigSchema()
+		}
+	}
+
+	return &terraform.ProviderSchema{
+		Provider:      schemaMap(p.Schema).CoreConfigSchema(),
+		ResourceTypes: resourceTypes,
+		DataSources:   dataSources,
+	}, nil
 }
 
 // Input implementation of terraform.ResourceProvider interface.
@@ -258,6 +329,10 @@ func (p *Provider) Resources() []terraform.ResourceType {
 		result = append(result, terraform.ResourceType{
 			Name:       k,
 			Importable: resource.Importer != nil,
+
+			// Indicates that a provider is compiled against a new enough
+			// version of core to support the GetSchema method.
+			SchemaAvailable: true,
 		})
 	}
 
@@ -363,6 +438,10 @@ func (p *Provider) DataSources() []terraform.DataSource {
 	for _, k := range keys {
 		result = append(result, terraform.DataSource{
 			Name: k,
+
+			// Indicates that a provider is compiled against a new enough
+			// version of core to support the GetSchema method.
+			SchemaAvailable: true,
 		})
 	}
 

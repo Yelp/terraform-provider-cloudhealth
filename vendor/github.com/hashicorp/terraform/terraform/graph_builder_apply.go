@@ -102,16 +102,14 @@ func (b *ApplyGraphBuilder) Steps() []GraphTransformer {
 		),
 
 		// Provisioner-related transformations
-		GraphTransformIf(
-			func() bool { return !b.Destroy },
-			GraphTransformMulti(
-				&MissingProvisionerTransformer{Provisioners: b.Provisioners},
-				&ProvisionerTransformer{},
-			),
-		),
+		&MissingProvisionerTransformer{Provisioners: b.Provisioners},
+		&ProvisionerTransformer{},
 
 		// Add root variables
 		&RootVariableTransformer{Module: b.Module},
+
+		// Add the local values
+		&LocalTransformer{Module: b.Module},
 
 		// Add the outputs
 		&OutputTransformer{Module: b.Module},
@@ -122,11 +120,22 @@ func (b *ApplyGraphBuilder) Steps() []GraphTransformer {
 		// Connect references so ordering is correct
 		&ReferenceTransformer{},
 
+		// Reverse the edges to outputs and locals, so that
+		// interpolations don't fail during destroy.
+		GraphTransformIf(
+			func() bool { return b.Destroy },
+			&DestroyValueReferenceTransformer{},
+		),
+
 		// Add the node to fix the state count boundaries
 		&CountBoundaryTransformer{},
 
 		// Target
 		&TargetsTransformer{Targets: b.Targets},
+
+		// Close opened plugin connections
+		&CloseProviderTransformer{},
+		&CloseProvisionerTransformer{},
 
 		// Single root
 		&RootTransformer{},

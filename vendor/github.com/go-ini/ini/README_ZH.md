@@ -407,7 +407,7 @@ cfg.WriteToIndent(writer, "\t")
 
 ```go
 ini.PrettyFormat = false
-``` 
+```
 
 ## 高级用法
 
