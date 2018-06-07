@@ -1,9 +1,9 @@
 .PHONY: itest_% clean shell
 PROJECT = terraform-provider-cloudhealth
 
-VERSION = 3.0
+VERSION = 4.0
 ITERATION = yelp1
-TFVERSION = 0.10
+TFVERSION = 0.11
 ARCH := $(shell facter architecture)
 
 PACKAGE_NAME := $(PROJECT)-${TFVERSION}_$(VERSION)-$(ITERATION)_$(ARCH).deb
