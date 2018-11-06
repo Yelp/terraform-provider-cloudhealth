@@ -16,6 +16,7 @@ type RuleJSON struct {
 	Type      string         `json:"type,omitempty"`
 	Asset     string         `json:"asset,omitempty"`
 	To        string         `json:"to,omitempty"`
+	From      string         `json:"from,omitempty"`
 	Ref_id    string         `json:"ref_id,omitempty"`    // for type='categorize'
 	Name      string         `json:"name,omitempty"`      // for type='categorize'
 	Field     []string       `json:"field,omitempty"`     // for type='categorize'
