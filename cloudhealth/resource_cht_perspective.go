@@ -188,7 +188,7 @@ func resourceCHTPerspectiveCreate(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	url := fmt.Sprintf("%s?api_key=%s", apiUrl, key)
-	log.Println("Posting to Cloudhealth: url %s data, %s", apiUrl, string(pj))
+	log.Printf("Posting to Cloudhealth: url %s data, %s\n", apiUrl, string(pj))
 	resp, err := http.Post(url, "application/json", bytes.NewReader(pj))
 	if err != nil {
 
