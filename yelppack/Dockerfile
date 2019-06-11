@@ -15,4 +15,5 @@ ENV GOPATH /go
 RUN mkdir /go
 #TODO: remove below
 RUN gem install json  -v 1.8.3
+RUN gem install ffi   -v 1.9.14
 RUN gem install fpm
