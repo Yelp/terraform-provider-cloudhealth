@@ -31,8 +31,8 @@ if {{var "l"}} == 0 {
 		{{var "c"}} = true
 	}
 	} {{end}}
-	var {{var "j"}} int
-    // var {{var "dn"}} bool
+	var {{var "j"}} int 
+    // var {{var "dn"}} bool 
 	for ; ({{var "hl"}} && {{var "j"}} < {{var "l"}}) || !({{var "hl"}} || r.CheckBreak()); {{var "j"}}++ {
 		{{if not isArray}} if {{var "j"}} == 0 && {{var "v"}} == nil {
 			if {{var "hl"}} {
@@ -41,7 +41,7 @@ if {{var "l"}} == 0 {
 				{{var "rl"}} = {{if isSlice}}8{{else if isChan}}64{{end}}
 			}
 			{{var "v"}} = make({{if isSlice}}[]{{ .Typ }}{{else if isChan}}{{.CTyp}}{{end}}, {{var "rl"}})
-			{{var "c"}} = true
+			{{var "c"}} = true 
 		}{{end}}
 		{{var "h"}}.ElemContainerState({{var "j"}})
         {{/* {{var "dn"}} = r.TryDecodeAsNil() */}}{{/* commented out, as decLineVar handles this already each time */}}
@@ -73,6 +73,6 @@ if {{var "l"}} == 0 {
 	} {{end}}
 }
 {{var "h"}}.End()
-{{if not isArray }}if {{var "c"}} {
+{{if not isArray }}if {{var "c"}} { 
 	*{{ .Varname }} = {{var "v"}}
 }{{end}}

@@ -15,7 +15,7 @@ if {{var "bh"}}.MapValueReset {
 	{{else if not decElemKindImmutable}}{{var "mg"}} = true
 	{{end}} }
 if {{var "l"}} != 0 {
-{{var "hl"}} := {{var "l"}} > 0
+{{var "hl"}} := {{var "l"}} > 0 
 	for {{var "j"}} := 0; ({{var "hl"}} && {{var "j"}} < {{var "l"}}) || !({{var "hl"}} || r.CheckBreak()); {{var "j"}}++ {
 	r.ReadMapElemKey() {{/* z.DecSendContainerState(codecSelfer_containerMapKey{{ .Sfx }}) */}}
 	{{ $x := printf "%vmk%v" .TempVar .Rand }}{{ decLineVarK $x }}
@@ -24,7 +24,7 @@ if {{var "l"}} != 0 {
 	}{{ end }}{{if decElemKindPtr}}
 	{{var "ms"}} = true{{end}}
 	if {{var "mg"}} {
-		{{if decElemKindPtr}}{{var "mv"}}, {{var "mok"}} = {{var "v"}}[{{var "mk"}}]
+		{{if decElemKindPtr}}{{var "mv"}}, {{var "mok"}} = {{var "v"}}[{{var "mk"}}] 
 		if {{var "mok"}} {
 			{{var "ms"}} = false
 		} {{else}}{{var "mv"}} = {{var "v"}}[{{var "mk"}}] {{end}}
