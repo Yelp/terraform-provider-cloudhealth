@@ -18,7 +18,7 @@ clean:
 	rm -rf dist/
 	make -C yelppack clean
 
-terraform-provider-cloudhealth: *.go cloudhealth/*.go
+terraform-provider-cloudhealth: vendor *.go cloudhealth/*.go
 	go build
 
 #
