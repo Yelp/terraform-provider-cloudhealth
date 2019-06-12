@@ -2,8 +2,7 @@ all: terraform-provider-cloudhealth
 
 .PHONY: vendor
 vendor:
-	go get -u github.com/kardianos/govendor
-	${GOPATH}/bin/govendor sync
+	go get ./...
 
 .PHONY: vet
 vet:
