@@ -33,15 +33,15 @@ const (
 
 type simpleEncDriver struct {
 	noBuiltInTypes
+	encDriverNoopContainerWriter
 	// encNoSeparator
 	e *Encoder
 	h *SimpleHandle
-	w encWriter
+	w *encWriterSwitch
 	b [8]byte
 	// c containerState
-	encDriverTrackContainerWriter
-	// encDriverNoopContainerWriter
-	_ [2]uint64 // padding
+	// encDriverTrackContainerWriter
+	// _ [2]uint64 // padding (cache-aligned)
 }
 
 func (e *simpleEncDriver) EncodeNil() {
@@ -49,7 +49,7 @@ func (e *simpleEncDriver) EncodeNil() {
 }
 
 func (e *simpleEncDriver) EncodeBool(b bool) {
-	if e.h.EncZeroValuesAsNil && e.c != containerMapKey && !b {
+	if e.h.EncZeroValuesAsNil && e.e.c != containerMapKey && !b {
 		e.EncodeNil()
 		return
 	}
@@ -61,7 +61,7 @@ func (e *simpleEncDriver) EncodeBool(b bool) {
 }
 
 func (e *simpleEncDriver) EncodeFloat32(f float32) {
-	if e.h.EncZeroValuesAsNil && e.c != containerMapKey && f == 0.0 {
+	if e.h.EncZeroValuesAsNil && e.e.c != containerMapKey && f == 0.0 {
 		e.EncodeNil()
 		return
 	}
@@ -70,7 +70,7 @@ func (e *simpleEncDriver) EncodeFloat32(f float32) {
 }
 
 func (e *simpleEncDriver) EncodeFloat64(f float64) {
-	if e.h.EncZeroValuesAsNil && e.c != containerMapKey && f == 0.0 {
+	if e.h.EncZeroValuesAsNil && e.e.c != containerMapKey && f == 0.0 {
 		e.EncodeNil()
 		return
 	}
@@ -91,7 +91,7 @@ func (e *simpleEncDriver) EncodeUint(v uint64) {
 }
 
 func (e *simpleEncDriver) encUint(v uint64, bd uint8) {
-	if e.h.EncZeroValuesAsNil && e.c != containerMapKey && v == 0 {
+	if e.h.EncZeroValuesAsNil && e.e.c != containerMapKey && v == 0 {
 		e.EncodeNil()
 		return
 	}
@@ -127,17 +127,27 @@ func (e *simpleEncDriver) encLen(bd byte, length int) {
 	}
 }
 
-func (e *simpleEncDriver) EncodeExt(rv interface{}, xtag uint64, ext Ext, _ *Encoder) {
-	bs := ext.WriteExt(rv)
+func (e *simpleEncDriver) EncodeExt(v interface{}, xtag uint64, ext Ext) {
+	var bs []byte
+	var bufp bytesBufPooler
+	if ext == SelfExt {
+		bs = bufp.get(1024)[:0]
+		e.e.sideEncode(v, &bs)
+	} else {
+		bs = ext.WriteExt(v)
+	}
 	if bs == nil {
 		e.EncodeNil()
 		return
 	}
 	e.encodeExtPreamble(uint8(xtag), len(bs))
 	e.w.writeb(bs)
+	if ext == SelfExt {
+		bufp.end()
+	}
 }
 
-func (e *simpleEncDriver) EncodeRawExt(re *RawExt, _ *Encoder) {
+func (e *simpleEncDriver) EncodeRawExt(re *RawExt) {
 	e.encodeExtPreamble(uint8(re.Tag), len(re.Data))
 	e.w.writeb(re.Data)
 }
@@ -148,17 +158,19 @@ func (e *simpleEncDriver) encodeExtPreamble(xtag byte, length int) {
 }
 
 func (e *simpleEncDriver) WriteArrayStart(length int) {
-	e.c = containerArrayStart
 	e.encLen(simpleVdArray, length)
 }
 
 func (e *simpleEncDriver) WriteMapStart(length int) {
-	e.c = containerMapStart
 	e.encLen(simpleVdMap, length)
 }
 
-func (e *simpleEncDriver) EncodeString(c charEncoding, v string) {
-	if false && e.h.EncZeroValuesAsNil && e.c != containerMapKey && v == "" {
+// func (e *simpleEncDriver) EncodeSymbol(v string) {
+// 	e.EncodeStringEnc(cUTF8, v)
+// }
+
+func (e *simpleEncDriver) EncodeStringEnc(c charEncoding, v string) {
+	if e.h.EncZeroValuesAsNil && e.e.c != containerMapKey && v == "" {
 		e.EncodeNil()
 		return
 	}
@@ -166,11 +178,7 @@ func (e *simpleEncDriver) EncodeString(c charEncoding, v string) {
 	e.w.writestr(v)
 }
 
-// func (e *simpleEncDriver) EncodeSymbol(v string) {
-// 	e.EncodeString(cUTF8, v)
-// }
-
-func (e *simpleEncDriver) EncodeStringBytes(c charEncoding, v []byte) {
+func (e *simpleEncDriver) EncodeStringBytesRaw(v []byte) {
 	// if e.h.EncZeroValuesAsNil && e.c != containerMapKey && v == nil {
 	if v == nil {
 		e.EncodeNil()
@@ -201,16 +209,16 @@ func (e *simpleEncDriver) EncodeTime(t time.Time) {
 type simpleDecDriver struct {
 	d      *Decoder
 	h      *SimpleHandle
-	r      decReader
+	r      *decReaderSwitch
 	bdRead bool
 	bd     byte
 	br     bool // a bytes reader?
-	c      containerState
+	// c      containerState
 	// b      [scratchByteArrayLen]byte
 	noBuiltInTypes
 	// noStreamingCodec
 	decDriverNoopContainerReader
-	_ [3]uint64 // padding
+	// _ [3]uint64 // padding
 }
 
 func (d *simpleDecDriver) readNextBd() {
@@ -362,7 +370,6 @@ func (d *simpleDecDriver) ReadMapStart() (length int) {
 		d.readNextBd()
 	}
 	d.bdRead = false
-	d.c = containerMapStart
 	return d.decLen()
 }
 
@@ -371,28 +378,7 @@ func (d *simpleDecDriver) ReadArrayStart() (length int) {
 		d.readNextBd()
 	}
 	d.bdRead = false
-	d.c = containerArrayStart
 	return d.decLen()
-}
-
-func (d *simpleDecDriver) ReadArrayElem() {
-	d.c = containerArrayElem
-}
-
-func (d *simpleDecDriver) ReadArrayEnd() {
-	d.c = containerArrayEnd
-}
-
-func (d *simpleDecDriver) ReadMapElemKey() {
-	d.c = containerMapKey
-}
-
-func (d *simpleDecDriver) ReadMapElemValue() {
-	d.c = containerMapValue
-}
-
-func (d *simpleDecDriver) ReadMapEnd() {
-	d.c = containerMapEnd
 }
 
 func (d *simpleDecDriver) decLen() int {
@@ -422,10 +408,6 @@ func (d *simpleDecDriver) decLen() int {
 	return -1
 }
 
-func (d *simpleDecDriver) DecodeString() (s string) {
-	return string(d.DecodeBytes(d.d.b[:], true))
-}
-
 func (d *simpleDecDriver) DecodeStringAsBytes() (s []byte) {
 	return d.DecodeBytes(d.d.b[:], true)
 }
@@ -443,15 +425,20 @@ func (d *simpleDecDriver) DecodeBytes(bs []byte, zerocopy bool) (bsOut []byte) {
 		if len(bs) == 0 && zerocopy {
 			bs = d.d.b[:]
 		}
-		bsOut, _ = fastpathTV.DecSliceUint8V(bs, true, d.d)
-		return
+		// bsOut, _ = fastpathTV.DecSliceUint8V(bs, true, d.d)
+		slen := d.ReadArrayStart()
+		bs = usableByteSlice(bs, slen)
+		for i := 0; i < len(bs); i++ {
+			bs[i] = uint8(chkOvf.UintV(d.DecodeUint64(), 8))
+		}
+		return bs
 	}
 
 	clen := d.decLen()
 	d.bdRead = false
 	if zerocopy {
 		if d.br {
-			return d.r.readx(clen)
+			return d.r.readx(uint(clen))
 		} else if len(bs) == 0 {
 			bs = d.d.b[:]
 		}
@@ -473,7 +460,7 @@ func (d *simpleDecDriver) DecodeTime() (t time.Time) {
 	}
 	d.bdRead = false
 	clen := int(d.r.readn1())
-	b := d.r.readx(clen)
+	b := d.r.readx(uint(clen))
 	if err := (&t).UnmarshalBinary(b); err != nil {
 		d.d.errorv(err)
 	}
@@ -491,6 +478,8 @@ func (d *simpleDecDriver) DecodeExt(rv interface{}, xtag uint64, ext Ext) (realx
 		re := rv.(*RawExt)
 		re.Tag = realxtag
 		re.Data = detachZeroCopyBytes(d.br, re.Data, xbs)
+	} else if ext == SelfExt {
+		d.d.sideDecode(rv, xbs)
 	} else {
 		ext.ReadExt(rv, xbs)
 	}
@@ -509,7 +498,11 @@ func (d *simpleDecDriver) decodeExtV(verifyTag bool, tag byte) (xtag byte, xbs [
 			d.d.errorf("wrong extension tag. Got %b. Expecting: %v", xtag, tag)
 			return
 		}
-		xbs = d.r.readx(l)
+		if d.br {
+			xbs = d.r.readx(uint(l))
+		} else {
+			xbs = decByteSlice(d.r, l, d.d.h.MaxInitLen, d.d.b[:])
+		}
 	case simpleVdByteArray, simpleVdByteArray + 1,
 		simpleVdByteArray + 2, simpleVdByteArray + 3, simpleVdByteArray + 4:
 		xbs = d.DecodeBytes(nil, true)
@@ -526,7 +519,7 @@ func (d *simpleDecDriver) DecodeNaked() {
 		d.readNextBd()
 	}
 
-	n := d.d.n
+	n := d.d.naked()
 	var decodeFurther bool
 
 	switch d.bd {
@@ -561,16 +554,19 @@ func (d *simpleDecDriver) DecodeNaked() {
 	case simpleVdString, simpleVdString + 1,
 		simpleVdString + 2, simpleVdString + 3, simpleVdString + 4:
 		n.v = valueTypeString
-		n.s = d.DecodeString()
+		n.s = string(d.DecodeStringAsBytes())
 	case simpleVdByteArray, simpleVdByteArray + 1,
 		simpleVdByteArray + 2, simpleVdByteArray + 3, simpleVdByteArray + 4:
-		n.v = valueTypeBytes
-		n.l = d.DecodeBytes(nil, false)
+		decNakedReadRawBytes(d, d.d, n, d.h.RawToString)
 	case simpleVdExt, simpleVdExt + 1, simpleVdExt + 2, simpleVdExt + 3, simpleVdExt + 4:
 		n.v = valueTypeExt
 		l := d.decLen()
 		n.u = uint64(d.r.readn1())
-		n.l = d.r.readx(l)
+		if d.br {
+			n.l = d.r.readx(uint(l))
+		} else {
+			n.l = decByteSlice(d.r, l, d.d.h.MaxInitLen, d.d.b[:])
+		}
 	case simpleVdArray, simpleVdArray + 1, simpleVdArray + 2,
 		simpleVdArray + 3, simpleVdArray + 4:
 		n.v = valueTypeArray
@@ -585,7 +581,6 @@ func (d *simpleDecDriver) DecodeNaked() {
 	if !decodeFurther {
 		d.bdRead = false
 	}
-	return
 }
 
 //------------------------------------
@@ -610,13 +605,13 @@ func (d *simpleDecDriver) DecodeNaked() {
 //
 // The full spec will be published soon.
 type SimpleHandle struct {
-	BasicHandle
 	binaryEncodingType
 	noElemSeparators
+	BasicHandle
 	// EncZeroValuesAsNil says to encode zero values for numbers, bool, string, etc as nil
 	EncZeroValuesAsNil bool
 
-	// _ [1]uint64 // padding
+	_ [7]uint64 // padding (cache-aligned)
 }
 
 // Name returns the name of the handle: simple
@@ -624,27 +619,25 @@ func (h *SimpleHandle) Name() string { return "simple" }
 
 // SetBytesExt sets an extension
 func (h *SimpleHandle) SetBytesExt(rt reflect.Type, tag uint64, ext BytesExt) (err error) {
-	return h.SetExt(rt, tag, &extWrapper{ext, interfaceExtFailer{}})
+	return h.SetExt(rt, tag, makeExt(ext))
 }
 
-func (h *SimpleHandle) hasElemSeparators() bool { return true } // as it implements Write(Map|Array)XXX
+// func (h *SimpleHandle) hasElemSeparators() bool { return true } // as it implements Write(Map|Array)XXX
 
 func (h *SimpleHandle) newEncDriver(e *Encoder) encDriver {
-	return &simpleEncDriver{e: e, w: e.w, h: h}
+	return &simpleEncDriver{e: e, w: e.w(), h: h}
 }
 
 func (h *SimpleHandle) newDecDriver(d *Decoder) decDriver {
-	return &simpleDecDriver{d: d, h: h, r: d.r, br: d.bytes}
+	return &simpleDecDriver{d: d, h: h, r: d.r(), br: d.bytes}
 }
 
 func (e *simpleEncDriver) reset() {
-	e.c = 0
-	e.w = e.e.w
+	e.w = e.e.w()
 }
 
 func (d *simpleDecDriver) reset() {
-	d.c = 0
-	d.r, d.br = d.d.r, d.d.bytes
+	d.r, d.br = d.d.r(), d.d.bytes
 	d.bd, d.bdRead = 0, false
 }
 

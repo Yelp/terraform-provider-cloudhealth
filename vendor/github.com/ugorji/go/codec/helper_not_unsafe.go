@@ -43,12 +43,28 @@ func rv2i(rv reflect.Value) interface{} {
 	return rv.Interface()
 }
 
-func rt2id(rt reflect.Type) uintptr {
-	return reflect.ValueOf(rt).Pointer()
+func rvisnil(rv reflect.Value) bool {
+	return rv.IsNil()
 }
 
-func rv2rtid(rv reflect.Value) uintptr {
-	return reflect.ValueOf(rv.Type()).Pointer()
+func rvssetlen(rv reflect.Value, length int) {
+	rv.SetLen(length)
+}
+
+// func rvisnilref(rv reflect.Value) bool {
+// 	return rv.IsNil()
+// }
+
+// func rvslen(rv reflect.Value) int {
+// 	return rv.Len()
+// }
+
+// func rv2rtid(rv reflect.Value) uintptr {
+// 	return reflect.ValueOf(rv.Type()).Pointer()
+// }
+
+func rt2id(rt reflect.Type) uintptr {
+	return reflect.ValueOf(rt).Pointer()
 }
 
 func i2rtid(i interface{}) uintptr {
@@ -94,20 +110,74 @@ func isEmptyValue(v reflect.Value, tinfos *TypeInfos, deref, checkStruct bool) b
 // }
 
 // --------------------------
+type atomicClsErr struct {
+	v atomic.Value
+}
+
+func (x *atomicClsErr) load() (e clsErr) {
+	if i := x.v.Load(); i != nil {
+		e = i.(clsErr)
+	}
+	return
+}
+
+func (x *atomicClsErr) store(p clsErr) {
+	x.v.Store(p)
+}
+
+// --------------------------
 type atomicTypeInfoSlice struct { // expected to be 2 words
 	v atomic.Value
 }
 
-func (x *atomicTypeInfoSlice) load() []rtid2ti {
-	i := x.v.Load()
-	if i == nil {
-		return nil
+func (x *atomicTypeInfoSlice) load() (e []rtid2ti) {
+	if i := x.v.Load(); i != nil {
+		e = i.([]rtid2ti)
 	}
-	return i.([]rtid2ti)
+	return
 }
 
 func (x *atomicTypeInfoSlice) store(p []rtid2ti) {
 	x.v.Store(p)
+}
+
+// --------------------------
+type atomicRtidFnSlice struct { // expected to be 2 words
+	v atomic.Value
+}
+
+func (x *atomicRtidFnSlice) load() (e []codecRtidFn) {
+	if i := x.v.Load(); i != nil {
+		e = i.([]codecRtidFn)
+	}
+	return
+}
+
+func (x *atomicRtidFnSlice) store(p []codecRtidFn) {
+	x.v.Store(p)
+}
+
+// --------------------------
+func (n *decNaked) ru() reflect.Value {
+	return reflect.ValueOf(&n.u).Elem()
+}
+func (n *decNaked) ri() reflect.Value {
+	return reflect.ValueOf(&n.i).Elem()
+}
+func (n *decNaked) rf() reflect.Value {
+	return reflect.ValueOf(&n.f).Elem()
+}
+func (n *decNaked) rl() reflect.Value {
+	return reflect.ValueOf(&n.l).Elem()
+}
+func (n *decNaked) rs() reflect.Value {
+	return reflect.ValueOf(&n.s).Elem()
+}
+func (n *decNaked) rt() reflect.Value {
+	return reflect.ValueOf(&n.t).Elem()
+}
+func (n *decNaked) rb() reflect.Value {
+	return reflect.ValueOf(&n.b).Elem()
 }
 
 // --------------------------
@@ -116,7 +186,7 @@ func (d *Decoder) raw(f *codecFnInfo, rv reflect.Value) {
 }
 
 func (d *Decoder) kString(f *codecFnInfo, rv reflect.Value) {
-	rv.SetString(d.d.DecodeString())
+	rv.SetString(string(d.d.DecodeStringAsBytes()))
 }
 
 func (d *Decoder) kBool(f *codecFnInfo, rv reflect.Value) {
@@ -128,11 +198,7 @@ func (d *Decoder) kTime(f *codecFnInfo, rv reflect.Value) {
 }
 
 func (d *Decoder) kFloat32(f *codecFnInfo, rv reflect.Value) {
-	fv := d.d.DecodeFloat64()
-	if chkOvf.Float32(fv) {
-		d.errorf("float32 overflow: %v", fv)
-	}
-	rv.SetFloat(fv)
+	rv.SetFloat(float64(d.decodeFloat32()))
 }
 
 func (d *Decoder) kFloat64(f *codecFnInfo, rv reflect.Value) {
@@ -193,8 +259,14 @@ func (e *Encoder) kTime(f *codecFnInfo, rv reflect.Value) {
 	e.e.EncodeTime(rv2i(rv).(time.Time))
 }
 
-func (e *Encoder) kString(f *codecFnInfo, rv reflect.Value) {
-	e.e.EncodeString(cUTF8, rv.String())
+func (e *Encoder) kStringToRaw(f *codecFnInfo, rv reflect.Value) {
+	s := rv.String()
+	e.e.EncodeStringBytesRaw(bytesView(s))
+}
+
+func (e *Encoder) kStringEnc(f *codecFnInfo, rv reflect.Value) {
+	s := rv.String()
+	e.e.EncodeStringEnc(cUTF8, s)
 }
 
 func (e *Encoder) kFloat64(f *codecFnInfo, rv reflect.Value) {
@@ -249,15 +321,26 @@ func (e *Encoder) kUintptr(f *codecFnInfo, rv reflect.Value) {
 	e.e.EncodeUint(rv.Uint())
 }
 
-// // keepAlive4BytesView maintains a reference to the input parameter for bytesView.
-// //
-// // Usage: call this at point where done with the bytes view.
-// func keepAlive4BytesView(v string) {}
+// ------------ map range and map indexing ----------
 
-// // keepAlive4BytesView maintains a reference to the input parameter for stringView.
-// //
-// // Usage: call this at point where done with the string view.
-// func keepAlive4StringView(v []byte) {}
+func mapGet(m, k, v reflect.Value) (vv reflect.Value) {
+	return m.MapIndex(k)
+}
+
+func mapSet(m, k, v reflect.Value) {
+	m.SetMapIndex(k, v)
+}
+
+func mapDelete(m, k reflect.Value) {
+	m.SetMapIndex(k, reflect.Value{})
+}
+
+// return an addressable reflect value that can be used in mapRange and mapGet operations.
+//
+// all calls to mapGet or mapRange will call here to get an addressable reflect.Value.
+func mapAddressableRV(t reflect.Type) (r reflect.Value) {
+	return // reflect.New(t).Elem()
+}
 
 // func definitelyNil(v interface{}) bool {
 // 	rv := reflect.ValueOf(v)

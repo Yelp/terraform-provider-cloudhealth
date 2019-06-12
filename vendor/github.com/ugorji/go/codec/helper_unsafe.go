@@ -17,10 +17,26 @@ import (
 // This file has unsafe variants of some helper methods.
 // NOTE: See helper_not_unsafe.go for the usage information.
 
+// For reflect.Value code, we decided to do the following:
+//    - if we know the kind, we can elide conditional checks for
+//      - SetXXX (Int, Uint, String, Bool, etc)
+//      - SetLen
+//
+// We can also optimize
+//      - IsNil
+//
+// We cannot do the same for Cap, Len if we still have to do conditional.
+
 // var zeroRTv [4]uintptr
 
 const safeMode = false
-const unsafeFlagIndir = 1 << 7 // keep in sync with GO_ROOT/src/reflect/value.go
+
+// keep in sync with GO_ROOT/src/reflect/value.go
+const (
+	unsafeFlagIndir    = 1 << 7
+	unsafeFlagKindMask = (1 << 5) - 1 // 5 bits for 27 kinds (up to 31)
+	// unsafeTypeKindDirectIface = 1 << 5
+)
 
 type unsafeString struct {
 	Data unsafe.Pointer
@@ -76,6 +92,17 @@ func definitelyNil(v interface{}) bool {
 	return ((*unsafeIntf)(unsafe.Pointer(&v))).word == nil
 }
 
+func rv2ptr(urv *unsafeReflectValue) (ptr unsafe.Pointer) {
+	// true references (map, func, chan, ptr - NOT slice) may be double-referenced? as flagIndir
+	// rv := *((*reflect.Value)(unsafe.Pointer(urv)))
+	if refBitset.isset(byte(urv.flag&unsafeFlagKindMask)) && urv.flag&unsafeFlagIndir != 0 {
+		ptr = *(*unsafe.Pointer)(urv.ptr)
+	} else {
+		ptr = urv.ptr
+	}
+	return
+}
+
 func rv2i(rv reflect.Value) interface{} {
 	// TODO: consider a more generally-known optimization for reflect.Value ==> Interface
 	//
@@ -83,22 +110,37 @@ func rv2i(rv reflect.Value) interface{} {
 	// the source go stdlib reflect/value.go, and trims the implementation.
 
 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
-	// true references (map, func, chan, ptr - NOT slice) may be double-referenced as flagIndir
-	var ptr unsafe.Pointer
-	if refBitset.isset(byte(urv.flag&(1<<5-1))) && urv.flag&unsafeFlagIndir != 0 {
-		ptr = *(*unsafe.Pointer)(urv.ptr)
-	} else {
-		ptr = urv.ptr
-	}
-	return *(*interface{})(unsafe.Pointer(&unsafeIntf{typ: urv.typ, word: ptr}))
+	return *(*interface{})(unsafe.Pointer(&unsafeIntf{typ: urv.typ, word: rv2ptr(urv)}))
 }
+
+func rvisnil(rv reflect.Value) bool {
+	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
+	if urv.flag&unsafeFlagIndir != 0 {
+		return *(*unsafe.Pointer)(urv.ptr) == nil
+	}
+	return urv.ptr == nil
+}
+
+func rvssetlen(rv reflect.Value, length int) {
+	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
+	(*unsafeString)(urv.ptr).Len = length
+}
+
+// func rvisnilref(rv reflect.Value) bool {
+// 	return (*unsafeReflectValue)(unsafe.Pointer(&rv)).ptr == nil
+// }
+
+// func rvslen(rv reflect.Value) int {
+// 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
+// 	return (*unsafeString)(urv.ptr).Len
+// }
+
+// func rv2rtid(rv reflect.Value) uintptr {
+// 	return uintptr((*unsafeReflectValue)(unsafe.Pointer(&rv)).typ)
+// }
 
 func rt2id(rt reflect.Type) uintptr {
 	return uintptr(((*unsafeIntf)(unsafe.Pointer(&rt))).word)
-}
-
-func rv2rtid(rv reflect.Value) uintptr {
-	return uintptr((*unsafeReflectValue)(unsafe.Pointer(&rv)).typ)
 }
 
 func i2rtid(i interface{}) uintptr {
@@ -176,31 +218,132 @@ func isEmptyValue(v reflect.Value, tinfos *TypeInfos, deref, checkStruct bool) b
 
 // --------------------------
 
-// atomicTypeInfoSlice contains length and pointer to the array for a slice.
-// It is expected to be 2 words.
+// atomicXXX is expected to be 2 words (for symmetry with atomic.Value)
 //
-// Previously, we atomically loaded and stored the length and array pointer separately,
-// which could lead to some races.
-// We now just atomically store and load the pointer to the value directly.
+// Note that we do not atomically load/store length and data pointer separately,
+// as this could lead to some races. Instead, we atomically load/store cappedSlice.
+//
+// Note: with atomic.(Load|Store)Pointer, we MUST work with an unsafe.Pointer directly.
 
-type atomicTypeInfoSlice struct { // expected to be 2 words
-	l int            // length of the data array (must be first in struct, for 64-bit alignment necessary for 386)
-	v unsafe.Pointer // data array - Pointer (not uintptr) to maintain GC reference
+// ----------------------
+type atomicTypeInfoSlice struct {
+	v unsafe.Pointer // *[]rtid2ti
+	_ uint64         // padding (atomicXXX expected to be 2 words)
 }
 
-func (x *atomicTypeInfoSlice) load() []rtid2ti {
-	xp := unsafe.Pointer(x)
-	x2 := *(*atomicTypeInfoSlice)(atomic.LoadPointer(&xp))
-	if x2.l == 0 {
-		return nil
+func (x *atomicTypeInfoSlice) load() (s []rtid2ti) {
+	x2 := atomic.LoadPointer(&x.v)
+	if x2 != nil {
+		s = *(*[]rtid2ti)(x2)
 	}
-	return *(*[]rtid2ti)(unsafe.Pointer(&unsafeSlice{Data: x2.v, Len: x2.l, Cap: x2.l}))
+	return
 }
 
 func (x *atomicTypeInfoSlice) store(p []rtid2ti) {
-	s := (*unsafeSlice)(unsafe.Pointer(&p))
-	xp := unsafe.Pointer(x)
-	atomic.StorePointer(&xp, unsafe.Pointer(&atomicTypeInfoSlice{l: s.Len, v: s.Data}))
+	atomic.StorePointer(&x.v, unsafe.Pointer(&p))
+}
+
+// --------------------------
+type atomicRtidFnSlice struct {
+	v unsafe.Pointer // *[]codecRtidFn
+	_ uint64         // padding (atomicXXX expected to be 2 words) (make 1 word so JsonHandle fits)
+}
+
+func (x *atomicRtidFnSlice) load() (s []codecRtidFn) {
+	x2 := atomic.LoadPointer(&x.v)
+	if x2 != nil {
+		s = *(*[]codecRtidFn)(x2)
+	}
+	return
+}
+
+func (x *atomicRtidFnSlice) store(p []codecRtidFn) {
+	atomic.StorePointer(&x.v, unsafe.Pointer(&p))
+}
+
+// --------------------------
+type atomicClsErr struct {
+	v unsafe.Pointer // *clsErr
+	_ uint64         // padding (atomicXXX expected to be 2 words)
+}
+
+func (x *atomicClsErr) load() (e clsErr) {
+	x2 := (*clsErr)(atomic.LoadPointer(&x.v))
+	if x2 != nil {
+		e = *x2
+	}
+	return
+}
+
+func (x *atomicClsErr) store(p clsErr) {
+	atomic.StorePointer(&x.v, unsafe.Pointer(&p))
+}
+
+// --------------------------
+
+// to create a reflect.Value for each member field of decNaked,
+// we first create a global decNaked, and create reflect.Value
+// for them all.
+// This way, we have the flags and type in the reflect.Value.
+// Then, when a reflect.Value is called, we just copy it,
+// update the ptr to the decNaked's, and return it.
+
+type unsafeDecNakedWrapper struct {
+	decNaked
+	ru, ri, rf, rl, rs, rb, rt reflect.Value // mapping to the primitives above
+}
+
+func (n *unsafeDecNakedWrapper) init() {
+	n.ru = reflect.ValueOf(&n.u).Elem()
+	n.ri = reflect.ValueOf(&n.i).Elem()
+	n.rf = reflect.ValueOf(&n.f).Elem()
+	n.rl = reflect.ValueOf(&n.l).Elem()
+	n.rs = reflect.ValueOf(&n.s).Elem()
+	n.rt = reflect.ValueOf(&n.t).Elem()
+	n.rb = reflect.ValueOf(&n.b).Elem()
+	// n.rr[] = reflect.ValueOf(&n.)
+}
+
+var defUnsafeDecNakedWrapper unsafeDecNakedWrapper
+
+func init() {
+	defUnsafeDecNakedWrapper.init()
+}
+
+func (n *decNaked) ru() (v reflect.Value) {
+	v = defUnsafeDecNakedWrapper.ru
+	((*unsafeReflectValue)(unsafe.Pointer(&v))).ptr = unsafe.Pointer(&n.u)
+	return
+}
+func (n *decNaked) ri() (v reflect.Value) {
+	v = defUnsafeDecNakedWrapper.ri
+	((*unsafeReflectValue)(unsafe.Pointer(&v))).ptr = unsafe.Pointer(&n.i)
+	return
+}
+func (n *decNaked) rf() (v reflect.Value) {
+	v = defUnsafeDecNakedWrapper.rf
+	((*unsafeReflectValue)(unsafe.Pointer(&v))).ptr = unsafe.Pointer(&n.f)
+	return
+}
+func (n *decNaked) rl() (v reflect.Value) {
+	v = defUnsafeDecNakedWrapper.rl
+	((*unsafeReflectValue)(unsafe.Pointer(&v))).ptr = unsafe.Pointer(&n.l)
+	return
+}
+func (n *decNaked) rs() (v reflect.Value) {
+	v = defUnsafeDecNakedWrapper.rs
+	((*unsafeReflectValue)(unsafe.Pointer(&v))).ptr = unsafe.Pointer(&n.s)
+	return
+}
+func (n *decNaked) rt() (v reflect.Value) {
+	v = defUnsafeDecNakedWrapper.rt
+	((*unsafeReflectValue)(unsafe.Pointer(&v))).ptr = unsafe.Pointer(&n.t)
+	return
+}
+func (n *decNaked) rb() (v reflect.Value) {
+	v = defUnsafeDecNakedWrapper.rb
+	((*unsafeReflectValue)(unsafe.Pointer(&v))).ptr = unsafe.Pointer(&n.b)
+	return
 }
 
 // --------------------------
@@ -211,7 +354,7 @@ func (d *Decoder) raw(f *codecFnInfo, rv reflect.Value) {
 
 func (d *Decoder) kString(f *codecFnInfo, rv reflect.Value) {
 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
-	*(*string)(urv.ptr) = d.d.DecodeString()
+	*(*string)(urv.ptr) = string(d.d.DecodeStringAsBytes())
 }
 
 func (d *Decoder) kBool(f *codecFnInfo, rv reflect.Value) {
@@ -225,12 +368,8 @@ func (d *Decoder) kTime(f *codecFnInfo, rv reflect.Value) {
 }
 
 func (d *Decoder) kFloat32(f *codecFnInfo, rv reflect.Value) {
-	fv := d.d.DecodeFloat64()
-	if chkOvf.Float32(fv) {
-		d.errorf("float32 overflow: %v", fv)
-	}
 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
-	*(*float32)(urv.ptr) = float32(fv)
+	*(*float32)(urv.ptr) = d.decodeFloat32()
 }
 
 func (d *Decoder) kFloat64(f *codecFnInfo, rv reflect.Value) {
@@ -305,9 +444,16 @@ func (e *Encoder) kTime(f *codecFnInfo, rv reflect.Value) {
 	e.e.EncodeTime(*(*time.Time)(v.ptr))
 }
 
-func (e *Encoder) kString(f *codecFnInfo, rv reflect.Value) {
+func (e *Encoder) kStringToRaw(f *codecFnInfo, rv reflect.Value) {
 	v := (*unsafeReflectValue)(unsafe.Pointer(&rv))
-	e.e.EncodeString(cUTF8, *(*string)(v.ptr))
+	s := *(*string)(v.ptr)
+	e.e.EncodeStringBytesRaw(bytesView(s))
+}
+
+func (e *Encoder) kStringEnc(f *codecFnInfo, rv reflect.Value) {
+	v := (*unsafeReflectValue)(unsafe.Pointer(&rv))
+	s := *(*string)(v.ptr)
+	e.e.EncodeStringEnc(cUTF8, s)
 }
 
 func (e *Encoder) kFloat64(f *codecFnInfo, rv reflect.Value) {
@@ -375,38 +521,180 @@ func (e *Encoder) kUintptr(f *codecFnInfo, rv reflect.Value) {
 	e.e.EncodeUint(uint64(*(*uintptr)(v.ptr)))
 }
 
-// ------------
+// ------------ map range and map indexing ----------
 
-// func (d *Decoder) raw(f *codecFnInfo, rv reflect.Value) {
-// 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
-// 	// if urv.flag&unsafeFlagIndir != 0 {
-// 	// 	urv.ptr = *(*unsafe.Pointer)(urv.ptr)
-// 	// }
-// 	*(*[]byte)(urv.ptr) = d.rawBytes()
+// unsafeMapHashIter
+//
+// go 1.4+ has runtime/hashmap.go or runtime/map.go which has a
+// hIter struct with the first 2 values being key and value
+// of the current iteration.
+//
+// This *hIter is passed to mapiterinit, mapiternext, mapiterkey, mapiterelem.
+// We bypass the reflect wrapper functions and just use the *hIter directly.
+//
+// Though *hIter has many fields, we only care about the first 2.
+type unsafeMapHashIter struct {
+	key, value unsafe.Pointer
+	// other fields are ignored
+}
+
+// type unsafeReflectMapIter struct {
+// 	m  unsafeReflectValue
+// 	it unsafe.Pointer
 // }
 
-// func rv0t(rt reflect.Type) reflect.Value {
-// 	ut := (*unsafeIntf)(unsafe.Pointer(&rt))
-// 	// we need to determine whether ifaceIndir, and then whether to just pass 0 as the ptr
-// 	uv := unsafeReflectValue{ut.word, &zeroRTv, flag(rt.Kind())}
-// 	return *(*reflect.Value)(unsafe.Pointer(&uv})
-// }
+type unsafeMapIter struct {
+	it               *unsafeMapHashIter
+	k, v             reflect.Value
+	mtyp, ktyp, vtyp unsafe.Pointer
+	mptr, kptr, vptr unsafe.Pointer
+	kisref, visref   bool
+	mapvalues        bool
+	done             bool
 
-// func rv2i(rv reflect.Value) interface{} {
-// 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
-// 	// true references (map, func, chan, ptr - NOT slice) may be double-referenced as flagIndir
-// 	var ptr unsafe.Pointer
-// 	// kk := reflect.Kind(urv.flag & (1<<5 - 1))
-// 	// if (kk == reflect.Map || kk == reflect.Ptr || kk == reflect.Chan || kk == reflect.Func) && urv.flag&unsafeFlagIndir != 0 {
-// 	if refBitset.isset(byte(urv.flag&(1<<5-1))) && urv.flag&unsafeFlagIndir != 0 {
-// 		ptr = *(*unsafe.Pointer)(urv.ptr)
-// 	} else {
-// 		ptr = urv.ptr
-// 	}
-// 	return *(*interface{})(unsafe.Pointer(&unsafeIntf{typ: urv.typ, word: ptr}))
-// 	// return *(*interface{})(unsafe.Pointer(&unsafeIntf{word: *(*unsafe.Pointer)(urv.ptr), typ: urv.typ}))
-// 	// return *(*interface{})(unsafe.Pointer(&unsafeIntf{word: urv.ptr, typ: urv.typ}))
-// }
+	// _ [2]uint64 // padding (cache-aligned)
+}
+
+func (t *unsafeMapIter) Next() (r bool) {
+	if t.done {
+		return
+	}
+	if t.it == nil {
+		t.it = (*unsafeMapHashIter)(mapiterinit(t.mtyp, t.mptr))
+	} else {
+		mapiternext((unsafe.Pointer)(t.it))
+	}
+	t.done = t.it.key == nil
+	if t.done {
+		return
+	}
+	unsafeSet(t.kptr, t.ktyp, t.it.key, t.kisref)
+	if t.mapvalues {
+		unsafeSet(t.vptr, t.vtyp, t.it.value, t.visref)
+	}
+	return true
+}
+
+func (t *unsafeMapIter) Key() reflect.Value {
+	return t.k
+}
+
+func (t *unsafeMapIter) Value() (r reflect.Value) {
+	if t.mapvalues {
+		return t.v
+	}
+	return
+}
+
+func unsafeSet(p, ptyp, p2 unsafe.Pointer, isref bool) {
+	if isref {
+		*(*unsafe.Pointer)(p) = *(*unsafe.Pointer)(p2) // p2
+	} else {
+		typedmemmove(ptyp, p, p2) // *(*unsafe.Pointer)(p2)) // p2)
+	}
+}
+
+func mapRange(m, k, v reflect.Value, mapvalues bool) *unsafeMapIter {
+	if m.IsNil() {
+		return &unsafeMapIter{done: true}
+	}
+	t := &unsafeMapIter{
+		k: k, v: v,
+		mapvalues: mapvalues,
+	}
+
+	var urv *unsafeReflectValue
+
+	urv = (*unsafeReflectValue)(unsafe.Pointer(&m))
+	t.mtyp = urv.typ
+	t.mptr = rv2ptr(urv)
+
+	urv = (*unsafeReflectValue)(unsafe.Pointer(&k))
+	t.ktyp = urv.typ
+	t.kptr = urv.ptr
+	t.kisref = refBitset.isset(byte(k.Kind()))
+
+	if mapvalues {
+		urv = (*unsafeReflectValue)(unsafe.Pointer(&v))
+		t.vtyp = urv.typ
+		t.vptr = urv.ptr
+		t.visref = refBitset.isset(byte(v.Kind()))
+	}
+
+	return t
+}
+
+func unsafeMapKVPtr(urv *unsafeReflectValue) unsafe.Pointer {
+	if urv.flag&unsafeFlagIndir == 0 {
+		return unsafe.Pointer(&urv.ptr)
+	}
+	return urv.ptr
+}
+
+func mapGet(m, k, v reflect.Value) (vv reflect.Value) {
+	var urv = (*unsafeReflectValue)(unsafe.Pointer(&k))
+	var kptr = unsafeMapKVPtr(urv)
+
+	urv = (*unsafeReflectValue)(unsafe.Pointer(&m))
+
+	vvptr := mapaccess(urv.typ, rv2ptr(urv), kptr)
+	if vvptr == nil {
+		return
+	}
+	// vvptr = *(*unsafe.Pointer)(vvptr)
+
+	urv = (*unsafeReflectValue)(unsafe.Pointer(&v))
+
+	unsafeSet(urv.ptr, urv.typ, vvptr, refBitset.isset(byte(v.Kind())))
+	return v
+}
+
+func mapSet(m, k, v reflect.Value) {
+	var urv = (*unsafeReflectValue)(unsafe.Pointer(&k))
+	var kptr = unsafeMapKVPtr(urv)
+	urv = (*unsafeReflectValue)(unsafe.Pointer(&v))
+	var vptr = unsafeMapKVPtr(urv)
+	urv = (*unsafeReflectValue)(unsafe.Pointer(&m))
+	mapassign(urv.typ, rv2ptr(urv), kptr, vptr)
+}
+
+func mapDelete(m, k reflect.Value) {
+	var urv = (*unsafeReflectValue)(unsafe.Pointer(&k))
+	var kptr = unsafeMapKVPtr(urv)
+	urv = (*unsafeReflectValue)(unsafe.Pointer(&m))
+	mapdelete(urv.typ, rv2ptr(urv), kptr)
+}
+
+// return an addressable reflect value that can be used in mapRange and mapGet operations.
+//
+// all calls to mapGet or mapRange will call here to get an addressable reflect.Value.
+func mapAddressableRV(t reflect.Type) (r reflect.Value) {
+	return reflect.New(t).Elem()
+}
+
+//go:linkname mapiterinit reflect.mapiterinit
+//go:noescape
+func mapiterinit(typ unsafe.Pointer, it unsafe.Pointer) (key unsafe.Pointer)
+
+//go:linkname mapiternext reflect.mapiternext
+//go:noescape
+func mapiternext(it unsafe.Pointer) (key unsafe.Pointer)
+
+//go:linkname mapaccess reflect.mapaccess
+//go:noescape
+func mapaccess(typ unsafe.Pointer, m unsafe.Pointer, key unsafe.Pointer) (val unsafe.Pointer)
+
+//go:linkname mapassign reflect.mapassign
+//go:noescape
+func mapassign(typ unsafe.Pointer, m unsafe.Pointer, key, val unsafe.Pointer)
+
+//go:linkname mapdelete reflect.mapdelete
+//go:noescape
+func mapdelete(typ unsafe.Pointer, m unsafe.Pointer, key unsafe.Pointer)
+
+//go:linkname typedmemmove reflect.typedmemmove
+//go:noescape
+func typedmemmove(typ unsafe.Pointer, dst, src unsafe.Pointer)
 
 // func definitelyNil(v interface{}) bool {
 // 	var ui *unsafeIntf = (*unsafeIntf)(unsafe.Pointer(&v))
@@ -417,223 +705,4 @@ func (e *Encoder) kUintptr(f *codecFnInfo, rv reflect.Value) {
 // 	return (tk == reflect.Interface || tk == reflect.Slice) && *(*unsafe.Pointer)(ui.word) == nil
 // 	fmt.Printf(">>>> definitely nil: isnil: %v, TYPE: \t%T, word: %v, *word: %v, type: %v, nil: %v\n",
 // 	v == nil, v, word, *((*unsafe.Pointer)(word)), ui.typ, nil)
-// }
-
-// func keepAlive4BytesView(v string) {
-// 	runtime.KeepAlive(v)
-// }
-
-// func keepAlive4StringView(v []byte) {
-// 	runtime.KeepAlive(v)
-// }
-
-// func rt2id(rt reflect.Type) uintptr {
-// 	return uintptr(((*unsafeIntf)(unsafe.Pointer(&rt))).word)
-// 	// var i interface{} = rt
-// 	// // ui := (*unsafeIntf)(unsafe.Pointer(&i))
-// 	// return ((*unsafeIntf)(unsafe.Pointer(&i))).word
-// }
-
-// func rv2i(rv reflect.Value) interface{} {
-// 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
-// 	// non-reference type: already indir
-// 	// reference type: depend on flagIndir property ('cos maybe was double-referenced)
-// 	// const (unsafeRvFlagKindMask    = 1<<5 - 1 , unsafeRvFlagIndir       = 1 << 7 )
-// 	// rvk := reflect.Kind(urv.flag & (1<<5 - 1))
-// 	// if (rvk == reflect.Chan ||
-// 	// 	rvk == reflect.Func ||
-// 	// 	rvk == reflect.Interface ||
-// 	// 	rvk == reflect.Map ||
-// 	// 	rvk == reflect.Ptr ||
-// 	// 	rvk == reflect.UnsafePointer) && urv.flag&(1<<8) != 0 {
-// 	// 	fmt.Printf(">>>>> ---- double indirect reference: %v, %v\n", rvk, rv.Type())
-// 	// 	return *(*interface{})(unsafe.Pointer(&unsafeIntf{word: *(*unsafe.Pointer)(urv.ptr), typ: urv.typ}))
-// 	// }
-// 	if urv.flag&(1<<5-1) == uintptr(reflect.Map) && urv.flag&(1<<7) != 0 {
-// 		// fmt.Printf(">>>>> ---- double indirect reference: %v, %v\n", rvk, rv.Type())
-// 		return *(*interface{})(unsafe.Pointer(&unsafeIntf{word: *(*unsafe.Pointer)(urv.ptr), typ: urv.typ}))
-// 	}
-// 	// fmt.Printf(">>>>> ++++ direct reference: %v, %v\n", rvk, rv.Type())
-// 	return *(*interface{})(unsafe.Pointer(&unsafeIntf{word: urv.ptr, typ: urv.typ}))
-// }
-
-// const (
-// 	unsafeRvFlagKindMask    = 1<<5 - 1
-// 	unsafeRvKindDirectIface = 1 << 5
-// 	unsafeRvFlagIndir       = 1 << 7
-// 	unsafeRvFlagAddr        = 1 << 8
-// 	unsafeRvFlagMethod      = 1 << 9
-
-// 	_USE_RV_INTERFACE bool = false
-// 	_UNSAFE_RV_DEBUG       = true
-// )
-
-// type unsafeRtype struct {
-// 	_    [2]uintptr
-// 	_    uint32
-// 	_    uint8
-// 	_    uint8
-// 	_    uint8
-// 	kind uint8
-// 	_    [2]uintptr
-// 	_    int32
-// }
-
-// func _rv2i(rv reflect.Value) interface{} {
-// 	// Note: From use,
-// 	//   - it's never an interface
-// 	//   - the only calls here are for ifaceIndir types.
-// 	//     (though that conditional is wrong)
-// 	//     To know for sure, we need the value of t.kind (which is not exposed).
-// 	//
-// 	// Need to validate the path: type is indirect ==> only value is indirect ==> default (value is direct)
-// 	//    - Type indirect, Value indirect: ==> numbers, boolean, slice, struct, array, string
-// 	//    - Type Direct,   Value indirect: ==> map???
-// 	//    - Type Direct,   Value direct:   ==> pointers, unsafe.Pointer, func, chan, map
-// 	//
-// 	// TRANSLATES TO:
-// 	//    if typeIndirect { } else if valueIndirect { } else { }
-// 	//
-// 	// Since we don't deal with funcs, then "flagNethod" is unset, and can be ignored.
-
-// 	if _USE_RV_INTERFACE {
-// 		return rv.Interface()
-// 	}
-// 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
-
-// 	// if urv.flag&unsafeRvFlagMethod != 0 || urv.flag&unsafeRvFlagKindMask == uintptr(reflect.Interface) {
-// 	// 	println("***** IS flag method or interface: delegating to rv.Interface()")
-// 	// 	return rv.Interface()
-// 	// }
-
-// 	// if urv.flag&unsafeRvFlagKindMask == uintptr(reflect.Interface) {
-// 	// 	println("***** IS Interface: delegate to rv.Interface")
-// 	// 	return rv.Interface()
-// 	// }
-// 	// if urv.flag&unsafeRvFlagKindMask&unsafeRvKindDirectIface == 0 {
-// 	// 	if urv.flag&unsafeRvFlagAddr == 0 {
-// 	// 		println("***** IS ifaceIndir typ")
-// 	// 		// ui := unsafeIntf{word: urv.ptr, typ: urv.typ}
-// 	// 		// return *(*interface{})(unsafe.Pointer(&ui))
-// 	// 		// return *(*interface{})(unsafe.Pointer(&unsafeIntf{word: urv.ptr, typ: urv.typ}))
-// 	// 	}
-// 	// } else if urv.flag&unsafeRvFlagIndir != 0 {
-// 	// 	println("***** IS flagindir")
-// 	// 	// return *(*interface{})(unsafe.Pointer(&unsafeIntf{word: *(*unsafe.Pointer)(urv.ptr), typ: urv.typ}))
-// 	// } else {
-// 	// 	println("***** NOT flagindir")
-// 	// 	return *(*interface{})(unsafe.Pointer(&unsafeIntf{word: urv.ptr, typ: urv.typ}))
-// 	// }
-// 	// println("***** default: delegate to rv.Interface")
-
-// 	urt := (*unsafeRtype)(unsafe.Pointer(urv.typ))
-// 	if _UNSAFE_RV_DEBUG {
-// 		fmt.Printf(">>>> start: %v: ", rv.Type())
-// 		fmt.Printf("%v - %v\n", *urv, *urt)
-// 	}
-// 	if urt.kind&unsafeRvKindDirectIface == 0 {
-// 		if _UNSAFE_RV_DEBUG {
-// 			fmt.Printf("**** +ifaceIndir type: %v\n", rv.Type())
-// 		}
-// 		// println("***** IS ifaceIndir typ")
-// 		// if true || urv.flag&unsafeRvFlagAddr == 0 {
-// 		// 	// println("    ***** IS NOT addr")
-// 		return *(*interface{})(unsafe.Pointer(&unsafeIntf{word: urv.ptr, typ: urv.typ}))
-// 		// }
-// 	} else if urv.flag&unsafeRvFlagIndir != 0 {
-// 		if _UNSAFE_RV_DEBUG {
-// 			fmt.Printf("**** +flagIndir type: %v\n", rv.Type())
-// 		}
-// 		// println("***** IS flagindir")
-// 		return *(*interface{})(unsafe.Pointer(&unsafeIntf{word: *(*unsafe.Pointer)(urv.ptr), typ: urv.typ}))
-// 	} else {
-// 		if _UNSAFE_RV_DEBUG {
-// 			fmt.Printf("**** -flagIndir type: %v\n", rv.Type())
-// 		}
-// 		// println("***** NOT flagindir")
-// 		return *(*interface{})(unsafe.Pointer(&unsafeIntf{word: urv.ptr, typ: urv.typ}))
-// 	}
-// 	// println("***** default: delegating to rv.Interface()")
-// 	// return rv.Interface()
-// }
-
-// var staticM0 = make(map[string]uint64)
-// var staticI0 = (int32)(-5)
-
-// func staticRv2iTest() {
-// 	i0 := (int32)(-5)
-// 	m0 := make(map[string]uint16)
-// 	m0["1"] = 1
-// 	for _, i := range []interface{}{
-// 		(int)(7),
-// 		(uint)(8),
-// 		(int16)(-9),
-// 		(uint16)(19),
-// 		(uintptr)(77),
-// 		(bool)(true),
-// 		float32(-32.7),
-// 		float64(64.9),
-// 		complex(float32(19), 5),
-// 		complex(float64(-32), 7),
-// 		[4]uint64{1, 2, 3, 4},
-// 		(chan<- int)(nil), // chan,
-// 		rv2i,              // func
-// 		io.Writer(ioutil.Discard),
-// 		make(map[string]uint),
-// 		(map[string]uint)(nil),
-// 		staticM0,
-// 		m0,
-// 		&m0,
-// 		i0,
-// 		&i0,
-// 		&staticI0,
-// 		&staticM0,
-// 		[]uint32{6, 7, 8},
-// 		"abc",
-// 		Raw{},
-// 		RawExt{},
-// 		&Raw{},
-// 		&RawExt{},
-// 		unsafe.Pointer(&i0),
-// 	} {
-// 		i2 := rv2i(reflect.ValueOf(i))
-// 		eq := reflect.DeepEqual(i, i2)
-// 		fmt.Printf(">>>> %v == %v? %v\n", i, i2, eq)
-// 	}
-// 	// os.Exit(0)
-// }
-
-// func init() {
-// 	staticRv2iTest()
-// }
-
-// func rv2i(rv reflect.Value) interface{} {
-// 	if _USE_RV_INTERFACE || rv.Kind() == reflect.Interface || rv.CanAddr() {
-// 		return rv.Interface()
-// 	}
-// 	// var i interface{}
-// 	// ui := (*unsafeIntf)(unsafe.Pointer(&i))
-// 	var ui unsafeIntf
-// 	urv := (*unsafeReflectValue)(unsafe.Pointer(&rv))
-// 	// fmt.Printf("urv: flag: %b, typ: %b, ptr: %b\n", urv.flag, uintptr(urv.typ), uintptr(urv.ptr))
-// 	if (urv.flag&unsafeRvFlagKindMask)&unsafeRvKindDirectIface == 0 {
-// 		if urv.flag&unsafeRvFlagAddr != 0 {
-// 			println("***** indirect and addressable! Needs typed move - delegate to rv.Interface()")
-// 			return rv.Interface()
-// 		}
-// 		println("****** indirect type/kind")
-// 		ui.word = urv.ptr
-// 	} else if urv.flag&unsafeRvFlagIndir != 0 {
-// 		println("****** unsafe rv flag indir")
-// 		ui.word = *(*unsafe.Pointer)(urv.ptr)
-// 	} else {
-// 		println("****** default: assign prt to word directly")
-// 		ui.word = urv.ptr
-// 	}
-// 	// ui.word = urv.ptr
-// 	ui.typ = urv.typ
-// 	// fmt.Printf("(pointers) ui.typ: %p, word: %p\n", ui.typ, ui.word)
-// 	// fmt.Printf("(binary)   ui.typ: %b, word: %b\n", uintptr(ui.typ), uintptr(ui.word))
-// 	return *(*interface{})(unsafe.Pointer(&ui))
-// 	// return i
 // }
