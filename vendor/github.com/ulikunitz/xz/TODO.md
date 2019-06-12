@@ -86,10 +86,6 @@
 
 ## Log
 
-### 2018-10-28
-
-Release v0.5.5 fixes issues #19 observing ErrLimit outputs.
-
 ### 2017-06-05
 
 Release v0.5.4 fixes issues #15 of another problem with the padding size
