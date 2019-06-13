@@ -2,8 +2,7 @@ all: terraform-provider-cloudhealth
 
 .PHONY: vendor
 vendor:
-	go get -u github.com/kardianos/govendor
-	${GOPATH}/bin/govendor sync
+	go get ./...
 
 .PHONY: vet
 vet:
@@ -19,7 +18,7 @@ clean:
 	rm -rf dist/
 	make -C yelppack clean
 
-terraform-provider-cloudhealth: *.go cloudhealth/*.go
+terraform-provider-cloudhealth: vendor *.go cloudhealth/*.go
 	go build
 
 #
