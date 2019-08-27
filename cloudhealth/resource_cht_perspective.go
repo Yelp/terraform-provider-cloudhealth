@@ -242,7 +242,7 @@ func resourceCHTPerspectiveRead(d *schema.ResourceData, meta interface{}) error 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := ioutil.ReadAll(resp.Body)
 		bodyStr := string(body)
-		log.Println("Response to Cloudhealth POST is:", bodyStr)
+		log.Println("Response from Cloudhealth is:", bodyStr)
 		return fmt.Errorf("Failed to load perspective %s because got status code %d", d.Id(), resp.StatusCode)
 	}
 
