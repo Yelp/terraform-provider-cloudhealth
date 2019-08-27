@@ -240,6 +240,9 @@ func resourceCHTPerspectiveRead(d *schema.ResourceData, meta interface{}) error 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		body, _ := ioutil.ReadAll(resp.Body)
+		bodyStr := string(body)
+		log.Println("Response to Cloudhealth POST is:", bodyStr)
 		return fmt.Errorf("Failed to load perspective %s because got status code %d", d.Id(), resp.StatusCode)
 	}
 
@@ -281,14 +284,10 @@ func resourceCHTPerspectiveUpdate(d *schema.ResourceData, meta interface{}) erro
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Failed to update perspective %s because got status code %d", d.Id(), resp.StatusCode)
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	bodyStr := string(body)
-	log.Println("Response to Cloudhealth PUT is:", bodyStr)
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("Got status code %d when attempting to update perspective: %s", resp.StatusCode, bodyStr)
+        body, _ := ioutil.ReadAll(resp.Body)
+        bodyStr := string(body)
+        log.Println("Response to Cloudhealth PUT is:", bodyStr)
+		return fmt.Errorf("Got status code %d when attempting to update perspective: %s\n%s", resp.StatusCode, d.Id(), bodyStr)
 	}
 
 	return nil
