@@ -3,7 +3,7 @@ PROJECT = terraform-provider-cloudhealth
 
 VERSION = 4.1
 ITERATION = yelp1
-TFVERSION = 0.12
+TFVERSION = 0.11
 ARCH := $(shell facter architecture)
 
 PACKAGE_NAME := $(PROJECT)-${TFVERSION}_$(VERSION)-$(ITERATION)_$(ARCH).deb
