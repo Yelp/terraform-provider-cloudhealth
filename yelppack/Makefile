@@ -21,7 +21,7 @@ $(PACKAGE_FILE): .docker_container_id
 
 .docker_container_id: .docker_image_id
 	docker run --rm=false \
-		-v $(CURDIR)/..:/go/src/github.com/Yelp/terraform-provider-cloudhealth:ro \
+		-v $(CURDIR)/..:/code \
 		-v $(CURDIR)/build.sh:/build.sh:ro \
 		--cidfile=$(CURDIR)/.docker_container_id \
 		$$(cat .docker_image_id) \

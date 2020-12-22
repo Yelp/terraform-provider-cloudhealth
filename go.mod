@@ -1,5 +1,7 @@
 module github.com/Yelp/terraform-provider-cloudhealth
 
+go 1.14
+
 require (
 	github.com/hashicorp/terraform v0.12.1
 	github.com/stretchr/testify v1.3.0
