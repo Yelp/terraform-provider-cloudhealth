@@ -5,7 +5,8 @@ version=$2
 iteration=$3
 tf_version=$4
 
-go get github.com/Yelp/${project}
+cd /code
+make
 mkdir /dist && cd /dist
 mkdir /tmp/usrbin
 
