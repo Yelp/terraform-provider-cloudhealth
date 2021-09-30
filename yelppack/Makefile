@@ -4,7 +4,7 @@ SHELL := /bin/bash
 .PHONY: itest_% clean shell
 PROJECT = cloudhealth
 
-VERSION = 4.2
+VERSION = 4.3
 ITERATION = yelp1
 TF_VERSIONS = 0.12 0.13
 ARCH := $(shell facter architecture)
