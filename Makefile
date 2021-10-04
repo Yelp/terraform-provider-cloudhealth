@@ -26,7 +26,8 @@ terraform-provider-cloudhealth: vendor *.go cloudhealth/*.go
 #
 .PHONY: itest_%
 itest_%:
+	cp -vp go.mod go.sum yelppack/
 	mkdir -p dist
 	make -C yelppack $@
 
-package: itest_lucid
+package: itest_bionic

@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 )
 
 const apiUrl string = "https://chapi.cloudhealthtech.com/v1/perspective_schemas"

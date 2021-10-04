@@ -1,5 +1,8 @@
-FROM docker-dev.yelpcorp.com/xenial_pkgbuild
+FROM docker-dev.yelpcorp.com/bionic_pkgbuild
 
 ENV PATH /usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/usr/local/sbin:/usr/local/go/bin:/go/bin
 ENV GOPATH /go
-RUN mkdir /go
+
+WORKDIR /go/src/terraform-provider-cloudhealth
+ADD go.mod go.sum ./
+RUN go mod download

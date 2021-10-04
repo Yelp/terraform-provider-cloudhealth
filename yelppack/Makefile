@@ -1,34 +1,45 @@
-.PHONY: itest_% clean shell
-PROJECT = terraform-provider-cloudhealth
+# We need access to Bash features, such as arrays
+SHELL := /bin/bash
 
-VERSION = 4.2
+.PHONY: itest_% clean shell
+PROJECT = cloudhealth
+
+VERSION = 4.3
 ITERATION = yelp1
-TFVERSION = 0.11
+TF_VERSIONS = 0.12 0.13
 ARCH := $(shell facter architecture)
 
-PACKAGE_NAME := $(PROJECT)-${TFVERSION}_$(VERSION)-$(ITERATION)_$(ARCH).deb
-PACKAGE_FILE := dist/$(PACKAGE_NAME)
+PACKAGE_NAMES := $(foreach TF_VERSION,$(TF_VERSIONS),terraform-provider-$(PROJECT)-$(TF_VERSION)_$(VERSION)-$(ITERATION)_amd64.deb)
+PACKAGE_FILES := $(foreach PACKAGE_NAME,$(PACKAGE_NAMES),dist/$(PACKAGE_NAME))
 
-DOCKER_TAG = $(PROJECT)_$(shell date +%s)
+DOCKER_TAG = terraform-provider-$(PROJECT)_$(shell date +%s)
 
 CLEAN_CONTAINER := [ -e .docker_container_id ] && docker rm --force $$(cat .docker_container_id) || true; rm -f .docker_container_id
 
-itest_%: $(PACKAGE_FILE)
-	docker run --rm -v $(CURDIR)/../dist:/dist:ro -v $(CURDIR)/itest.sh:/itest.sh:ro docker-dev.yelpcorp.com/$*_yelp:latest bash /itest.sh /$(PACKAGE_FILE) $(TFVERSION)
+itest_%: $(PACKAGE_FILES)
+	export TF_VERSIONS=( $(TF_VERSIONS) ) && \
+	export PACKAGE_FILES=( $(PACKAGE_FILES) ) && \
+	export VERSION=( $(VERSION) ) && \
+	for ((i=0; i<$${#TF_VERSIONS[@]}; ++i)); do \
+		docker run --rm -v $(CURDIR)/../dist:/dist:ro -v $(CURDIR)/itest.sh:/itest.sh:ro docker-dev.yelpcorp.com/$*_yelp:latest bash /itest.sh /$${PACKAGE_FILES[i]} $${TF_VERSIONS[i]} $${VERSION}; \
+	done
 
-$(PACKAGE_FILE): .docker_container_id
-	docker cp $$(cat .docker_container_id):/$(PACKAGE_FILE) ../dist/
+$(PACKAGE_FILES): .docker_container_id
+	mkdir -p ../dist && \
+	for PACKAGE_FILE in $(PACKAGE_FILES); do \
+		docker cp $$(cat .docker_container_id):/$$PACKAGE_FILE ../dist/; \
+	done
 
 .docker_container_id: .docker_image_id
 	docker run --rm=false \
-		-v $(CURDIR)/..:/code \
+		-v $(CURDIR)/..:/go/src/terraform-provider-$(PROJECT):ro \
 		-v $(CURDIR)/build.sh:/build.sh:ro \
 		--cidfile=$(CURDIR)/.docker_container_id \
 		$$(cat .docker_image_id) \
-		bash /build.sh $(PROJECT) $(VERSION) $(ITERATION) $(TFVERSION)|| \
+		bash /build.sh $(PROJECT) $(VERSION) $(ITERATION) $(TF_VERSIONS) || \
 	(retval=$$?; $(CLEAN_CONTAINER); exit $$retval; )
 
-.docker_image_id: Dockerfile
+.docker_image_id: Dockerfile go.mod go.sum
 	docker build -t $(DOCKER_TAG) .
 	docker inspect -f '{{ .Id }}' $(DOCKER_TAG) > .docker_image_id
 
