@@ -14,8 +14,8 @@ func Provider() terraform.ResourceProvider {
 		Schema: map[string]*schema.Schema{
 			"key": &schema.Schema{
 				Type:        schema.TypeString,
-				Required:    true,
-				DefaultFunc: schema.EnvDefaultFunc("CHT_API_KEY", nil),
+				Optional:    true,
+				DefaultFunc: schema.EnvDefaultFunc("CHT_API_KEY", ""),
 				Description: "API key for Cloudhealth",
 			},
 		},
@@ -30,6 +30,9 @@ func Provider() terraform.ResourceProvider {
 
 func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	key := d.Get("key").(string)
+	if key == "" {
+		return nil, errors.New("Must set CHT_API_KEY or provide a 'key' to the provider")
+	}
 	meta := ChtMeta{
 		apiKey: key,
 	}
