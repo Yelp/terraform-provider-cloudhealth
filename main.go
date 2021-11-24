@@ -2,7 +2,7 @@ package main
 
 import (
 	"cloudhealth/cloudhealth"
-	"github.com/hashicorp/terraform-plugin-sdk/plugin"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/plugin"
 )
 
 func main() {
