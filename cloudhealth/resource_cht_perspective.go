@@ -2,6 +2,7 @@ package cloudhealth
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -9,17 +10,18 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 const apiUrl string = "https://chapi.cloudhealthtech.com/v1/perspective_schemas"
 
 func resourceCHTPerspective() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceCHTPerspectiveCreate,
-		Read:   resourceCHTPerspectiveRead,
-		Update: resourceCHTPerspectiveUpdate,
-		Delete: resourceCHTPerspectiveDelete,
+		CreateContext: resourceCHTPerspectiveCreate,
+		ReadContext:   resourceCHTPerspectiveRead,
+		UpdateContext: resourceCHTPerspectiveUpdate,
+		DeleteContext: resourceCHTPerspectiveDelete,
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
 		},
@@ -179,12 +181,12 @@ func resourceCHTPerspective() *schema.Resource {
 	}
 }
 
-func resourceCHTPerspectiveCreate(d *schema.ResourceData, meta interface{}) error {
+func resourceCHTPerspectiveCreate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	key := meta.(*ChtMeta).apiKey
 
 	pj, err := tfToJson(d)
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
 	url := fmt.Sprintf("%s?api_key=%s", apiUrl, key)
@@ -195,7 +197,7 @@ func resourceCHTPerspectiveCreate(d *schema.ResourceData, meta interface{}) erro
 		body, _ := ioutil.ReadAll(resp.Body)
 		bodyStr := string(body)
 		log.Println("Response to Cloudhealth POST is:", bodyStr)
-		return fmt.Errorf("Failed to create perspective because %s, response %s", err, bodyStr)
+		return diag.FromErr(fmt.Errorf("Failed to create perspective because %s, response %s", err, bodyStr))
 	}
 	defer resp.Body.Close()
 
@@ -203,17 +205,17 @@ func resourceCHTPerspectiveCreate(d *schema.ResourceData, meta interface{}) erro
 		body, _ := ioutil.ReadAll(resp.Body)
 		bodyStr := string(body)
 		log.Println("Response to Cloudhealth POST is:", bodyStr)
-		return fmt.Errorf("Failed to create perspective %s because got status code %d", d.Id(), resp.StatusCode)
+		return diag.FromErr(fmt.Errorf("Failed to create perspective %s because got status code %d", d.Id(), resp.StatusCode))
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Failed to create perspective because %s", err)
+		return diag.FromErr(fmt.Errorf("Failed to create perspective because %s", err))
 	}
 	re := regexp.MustCompile(`Perspective (\d*) created`)
 	match := re.FindStringSubmatch(string(body))
 	if match == nil || len(match) != 2 {
-		return fmt.Errorf("Created perspective but didn't understand response to extract ID: %s", body)
+		return diag.FromErr(fmt.Errorf("Created perspective but didn't understand response to extract ID: %s", body))
 	}
 	bodyStr := string(body)
 	log.Println("[INFO] Response to Cloudhealth POST is:", bodyStr)
@@ -222,64 +224,68 @@ func resourceCHTPerspectiveCreate(d *schema.ResourceData, meta interface{}) erro
 	// We need to set the constants field to what cloudhealth thinks it is, as
 	// its computed we need to read it back from cloudhealth - easiest to do that
 	// by using the read method
-	return resourceCHTPerspectiveRead(d, meta)
+	return resourceCHTPerspectiveRead(ctx, d, meta)
 }
 
-func resourceCHTPerspectiveRead(d *schema.ResourceData, meta interface{}) error {
+func resourceCHTPerspectiveRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	key := meta.(*ChtMeta).apiKey
 
 	id, err := strconv.Atoi(d.Id())
 	if err != nil {
-		return fmt.Errorf("Failed to parse %s as int because %s", d.Id(), err)
+		return diag.FromErr(fmt.Errorf("Failed to parse %s as int because %s", d.Id(), err))
 	}
 
 	url := fmt.Sprintf("%s/%d?api_key=%s", apiUrl, id, key)
 	resp, err := http.Get(url)
 	if err != nil {
-		return fmt.Errorf("Failed to load perspective %s because %s", d.Id(), err)
+		return diag.FromErr(fmt.Errorf("Failed to load perspective %s because %s", d.Id(), err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := ioutil.ReadAll(resp.Body)
 		bodyStr := string(body)
 		log.Println("Response from Cloudhealth is:", bodyStr)
-		return fmt.Errorf("Failed to load perspective %s because got status code %d", d.Id(), resp.StatusCode)
+		return diag.FromErr(fmt.Errorf("Failed to load perspective %s because got status code %d", d.Id(), resp.StatusCode))
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Failed to read perspective %s because %s", d.Id(), err)
+		return diag.FromErr(fmt.Errorf("Failed to read perspective %s because %s", d.Id(), err))
 	}
 
-	return jsonToTF(body, d)
+	err = jsonToTF(body, d)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	return nil
 }
 
-func resourceCHTPerspectiveUpdate(d *schema.ResourceData, meta interface{}) error {
+func resourceCHTPerspectiveUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	key := meta.(*ChtMeta).apiKey
 	pj, err := tfToJson(d)
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
-	ioutil.WriteFile("cht_update.json", pj, 0644)
+	ioutil.WriteFile(fmt.Sprintf("cht_update-%s.json", d.Id()), pj, 0644)
 
 	id, err := strconv.Atoi(d.Id())
 	if err != nil {
-		return fmt.Errorf("Failed to parse %s as int because %s", d.Id(), err)
+		return diag.FromErr(fmt.Errorf("Failed to parse %s as int because %s", d.Id(), err))
 	}
 
 	url := fmt.Sprintf("%s/%d?api_key=%s", apiUrl, id, key)
 
 	req, err := http.NewRequest("PUT", url, bytes.NewReader(pj))
 	if err != nil {
-		return fmt.Errorf("Failed to update perspective %s because %s", d.Id(), err)
+		return diag.FromErr(fmt.Errorf("Failed to update perspective %s because %s", d.Id(), err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Failed to update perspective %s because %s", d.Id(), err)
+		return diag.FromErr(fmt.Errorf("Failed to update perspective %s because %s", d.Id(), err))
 	}
 	defer resp.Body.Close()
 
@@ -287,18 +293,18 @@ func resourceCHTPerspectiveUpdate(d *schema.ResourceData, meta interface{}) erro
 		body, _ := ioutil.ReadAll(resp.Body)
 		bodyStr := string(body)
 		log.Println("Response to Cloudhealth PUT is:", bodyStr)
-		return fmt.Errorf("Got status code %d when attempting to update perspective: %s\n%s", resp.StatusCode, d.Id(), bodyStr)
+		return diag.FromErr(fmt.Errorf("Got status code %d when attempting to update perspective: %s\n%s", resp.StatusCode, d.Id(), bodyStr))
 	}
 
 	return nil
 }
 
-func resourceCHTPerspectiveDelete(d *schema.ResourceData, meta interface{}) error {
+func resourceCHTPerspectiveDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	key := meta.(*ChtMeta).apiKey
 
 	id, err := strconv.Atoi(d.Id())
 	if err != nil {
-		return fmt.Errorf("Failed to parse %s as int because %s", d.Id(), err)
+		return diag.FromErr(fmt.Errorf("Failed to parse %s as int because %s", d.Id(), err))
 	}
 
 	hard_delete := d.Get("hard_delete")
@@ -306,18 +312,18 @@ func resourceCHTPerspectiveDelete(d *schema.ResourceData, meta interface{}) erro
 
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
-		return fmt.Errorf("Failed to delete perspective %s because %s", d.Id(), err)
+		return diag.FromErr(fmt.Errorf("Failed to delete perspective %s because %s", d.Id(), err))
 	}
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Failed to delete perspective %s because %s", d.Id(), err)
+		return diag.FromErr(fmt.Errorf("Failed to delete perspective %s because %s", d.Id(), err))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Failed to delete perspective %s because got status code %d", d.Id(), resp.StatusCode)
+		return diag.FromErr(fmt.Errorf("Failed to delete perspective %s because got status code %d", d.Id(), resp.StatusCode))
 	}
 
 	return nil

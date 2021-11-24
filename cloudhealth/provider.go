@@ -1,22 +1,23 @@
 package cloudhealth
 
 import (
+	"context"
 	"errors"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 type ChtMeta struct {
 	apiKey string
 }
 
-func Provider() terraform.ResourceProvider {
+func Provider() *schema.Provider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
 			"key": &schema.Schema{
 				Type:        schema.TypeString,
 				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("CHT_API_KEY", ""),
+				DefaultFunc: schema.EnvDefaultFunc("CHT_API_KEY", nil),
 				Description: "API key for Cloudhealth",
 			},
 		},
@@ -25,14 +26,16 @@ func Provider() terraform.ResourceProvider {
 			"cloudhealth_perspective": resourceCHTPerspective(),
 		},
 
-		ConfigureFunc: providerConfigure,
+		ConfigureContextFunc: providerConfigure,
 	}
 }
 
-func providerConfigure(d *schema.ResourceData) (interface{}, error) {
-	key := d.Get("key").(string)
-	if key == "" {
-		return nil, errors.New("Must set CHT_API_KEY or provide a 'key' to the provider")
+func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
+	key := ""
+	if k, ok := d.GetOk("key"); ok {
+		key = k.(string)
+	} else {
+		return nil, diag.FromErr(errors.New("Must set CHT_API_KEY or provide a 'key' to the provider"))
 	}
 	meta := ChtMeta{
 		apiKey: key,
