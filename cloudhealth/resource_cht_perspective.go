@@ -267,7 +267,7 @@ func resourceCHTPerspectiveUpdate(ctx context.Context, d *schema.ResourceData, m
 		return diag.FromErr(err)
 	}
 
-	ioutil.WriteFile("cht_update.json", pj, 0644)
+	ioutil.WriteFile(fmt.Sprintf("cht_update-%s.json", d.Id()), pj, 0644)
 
 	id, err := strconv.Atoi(d.Id())
 	if err != nil {
