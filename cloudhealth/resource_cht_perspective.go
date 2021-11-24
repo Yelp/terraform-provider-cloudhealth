@@ -284,9 +284,9 @@ func resourceCHTPerspectiveUpdate(d *schema.ResourceData, meta interface{}) erro
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-        body, _ := ioutil.ReadAll(resp.Body)
-        bodyStr := string(body)
-        log.Println("Response to Cloudhealth PUT is:", bodyStr)
+		body, _ := ioutil.ReadAll(resp.Body)
+		bodyStr := string(body)
+		log.Println("Response to Cloudhealth PUT is:", bodyStr)
 		return fmt.Errorf("Got status code %d when attempting to update perspective: %s\n%s", resp.StatusCode, d.Id(), bodyStr)
 	}
 
