@@ -6,29 +6,20 @@ PROJECT = cloudhealth
 
 VERSION = 4.4
 ITERATION = yelp2
-TF_VERSIONS = 0.12 0.13
 ARCH := $(shell facter architecture)
 
-PACKAGE_NAMES := $(foreach TF_VERSION,$(TF_VERSIONS),terraform-provider-$(PROJECT)-$(TF_VERSION)_$(VERSION)-$(ITERATION)_amd64.deb)
-PACKAGE_FILES := $(foreach PACKAGE_NAME,$(PACKAGE_NAMES),dist/$(PACKAGE_NAME))
+PACKAGE_NAME := terraform-provider-$(PROJECT)_$(VERSION)-$(ITERATION)_amd64.deb
 
 DOCKER_TAG = terraform-provider-$(PROJECT)_$(shell date +%s)
 
 CLEAN_CONTAINER := [ -e .docker_container_id ] && docker rm --force $$(cat .docker_container_id) || true; rm -f .docker_container_id
 
-itest_%: $(PACKAGE_FILES)
-	export TF_VERSIONS=( $(TF_VERSIONS) ) && \
-	export PACKAGE_FILES=( $(PACKAGE_FILES) ) && \
-	export VERSION=( $(VERSION) ) && \
-	for ((i=0; i<$${#TF_VERSIONS[@]}; ++i)); do \
-		docker run --rm -v $(CURDIR)/../dist:/dist:ro -v $(CURDIR)/itest.sh:/itest.sh:ro docker-dev.yelpcorp.com/$*_yelp:latest bash /itest.sh /$${PACKAGE_FILES[i]} $${TF_VERSIONS[i]} $${VERSION}; \
-	done
+itest_%: dist/%/$(PACKAGE_NAME)
+	docker run --rm -v $(CURDIR)/../dist:/dist:ro -v $(CURDIR)/itest.sh:/itest.sh:ro docker-dev.yelpcorp.com/$*_yelp:latest bash /itest.sh /dist/$*/$(PACKAGE_NAME) $(VERSION)
 
-$(PACKAGE_FILES): .docker_container_id
-	mkdir -p ../dist && \
-	for PACKAGE_FILE in $(PACKAGE_FILES); do \
-		docker cp $$(cat .docker_container_id):/$$PACKAGE_FILE ../dist/; \
-	done
+dist/%/$(PACKAGE_NAME): .docker_container_id
+	mkdir -p ../dist/$* && \
+	docker cp $$(cat .docker_container_id):/dist/$(PACKAGE_NAME) ../dist/$*/
 
 .docker_container_id: .docker_image_id
 	docker run --rm=false \
