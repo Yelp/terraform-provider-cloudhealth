@@ -4,8 +4,8 @@ SHELL := /bin/bash
 .PHONY: itest_% clean shell
 PROJECT = cloudhealth
 
-VERSION = 4.4
-ITERATION = yelp2
+VERSION = 4.5
+ITERATION = yelp1
 ARCH := $(shell facter architecture)
 
 PACKAGE_NAME := terraform-provider-$(PROJECT)_$(VERSION)-$(ITERATION)_amd64.deb
